@@ -1,161 +1,158 @@
 #!/usr/bin/env python3
 """
-Split Prism Icon v4 — larger prism (~50% canvas), proper colors, macOS squircle mask.
+ChangeIcon App Icon — Dual Orb Design
+Two overlapping translucent orbs (gold/warm + indigo/cool) 
+representing the light/dark cycle. Clean, modern, distinctive.
 """
 
-from PIL import Image, ImageDraw, ImageFilter
-import math
-import os
+from PIL import Image, ImageDraw
+import math, os, subprocess, shutil
 
 SIZE = 1024
 OUTPUT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-
-def rounded_rect_mask(size, radius_ratio=0.225):
+def squircle_mask(size, radius_ratio=0.225):
     mask = Image.new("L", (size, size), 0)
     draw = ImageDraw.Draw(mask)
     r = int(size * radius_ratio)
     draw.rounded_rectangle([(0, 0), (size - 1, size - 1)], radius=r, fill=255)
     return mask
 
-
-def create_gradient(size, color1, color2, angle=135):
-    grad = Image.new("RGBA", (size, size))
-    pixels = grad.load()
-    rad = math.radians(angle)
-    cx, cy = size / 2, size / 2
-    diag = size * math.sqrt(2)
-
+def create_dual_orb_icon(size, is_dark):
+    if is_dark:
+        bg_color = (20, 21, 25, 255)
+    else:
+        bg_color = (245, 246, 250, 255)
+    
+    cx, cy = size // 2, size // 2
+    orb_radius = int(size * 0.28)
+    overlap = int(size * 0.18)
+    
+    # Orb 1 (Warm/Gold) - left
+    orb1_cx = cx - overlap
+    orb1_cy = cy
+    orb1 = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    orb1_draw = ImageDraw.Draw(orb1)
     for y in range(size):
         for x in range(size):
-            proj = (x - cx) * math.cos(rad) + (y - cy) * math.sin(rad)
-            t = (proj / diag) + 0.5
-            t = max(0, min(1, t))
-            r = int(color1[0] + (color2[0] - color1[0]) * t)
-            g = int(color1[1] + (color2[1] - color1[1]) * t)
-            b = int(color1[2] + (color2[2] - color1[2]) * t)
-            pixels[x, y] = (r, g, b, 255)
-    return grad
-
-
-def create_icon(is_dark: bool) -> Image.Image:
-    if is_dark:
-        bg_color1, bg_color2 = (20, 20, 42), (28, 28, 58)
-        ur_color, ur_color2 = (255, 170, 60), (255, 105, 100)
-        ll_color, ll_color2 = (72, 210, 200), (105, 90, 235)
-        glow_color = (255, 255, 255, 35)
-        accent_dot = (255, 255, 255, 200)
-        border_color = (255, 255, 255, 30)
-        center_dot = (255, 255, 255, 150)
-    else:
-        bg_color1, bg_color2 = (232, 232, 242), (248, 248, 255)
-        ur_color, ur_color2 = (255, 145, 45), (255, 85, 75)
-        ll_color, ll_color2 = (48, 185, 178), (88, 68, 222)
-        glow_color = (0, 0, 0, 14)
-        accent_dot = (85, 85, 125, 180)
-        border_color = (0, 0, 0, 22)
-        center_dot = (65, 65, 105, 170)
-
-    img = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-
-    # Background
-    bg = create_gradient(SIZE, bg_color1, bg_color2, angle=135)
-    img.paste(bg, (0, 0))
-    draw = ImageDraw.Draw(img)
-
-    # Prism — 50% of canvas
-    prism_size = int(SIZE * 0.50)
-    cx, cy = SIZE // 2, SIZE // 2
-    half = prism_size // 2
-
-    # Four triangles
-    ur = [(cx, cy - half), (cx + half, cy), (cx, cy)]  # upper-right (warm)
-    ll = [(cx, cy + half), (cx - half, cy), (cx, cy)]  # lower-left (cool)
-    ul = [(cx, cy - half), (cx - half, cy), (cx, cy)]  # upper-left (warm accent)
-    lr = [(cx, cy + half), (cx + half, cy), (cx, cy)]  # lower-right (cool accent)
-
-    # Upper-right warm
-    draw.polygon(ur, fill=ur_color)
-    for i in range(3):
-        s = 1.0 - i * 0.08
-        pts = [(cx, cy - int(half * s)), (cx + int(half * s), cy), (cx, cy)]
-        overlay = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-        odraw = ImageDraw.Draw(overlay)
-        odraw.polygon(pts, fill=ur_color2 + (40 - i * 10,))
-        img = Image.alpha_composite(img, overlay)
-        draw = ImageDraw.Draw(img)
-
-    # Lower-left cool
-    draw.polygon(ll, fill=ll_color)
-    for i in range(3):
-        s = 1.0 - i * 0.08
-        pts = [(cx, cy + int(half * s)), (cx - int(half * s), cy), (cx, cy)]
-        overlay = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-        odraw = ImageDraw.Draw(overlay)
-        odraw.polygon(pts, fill=ll_color2 + (40 - i * 10,))
-        img = Image.alpha_composite(img, overlay)
-        draw = ImageDraw.Draw(img)
-
-    # Accent triangles
-    draw.polygon(ul, fill=(ur_color[0] + 30, ur_color[1] + 30, ur_color[2] + 20, 200))
-    draw.polygon(lr, fill=(ll_color[0] - 20, ll_color[1] - 20, ll_color[2] + 20, 200))
-
-    # Diamond outline
-    diamond_pts = [(cx, cy - half), (cx + half, cy), (cx, cy + half), (cx - half, cy)]
-    draw.polygon(diamond_pts, outline=border_color, width=3)
-
-    # Diagonal split
-    draw.line([(cx - half, cy - half), (cx + half, cy + half)], fill=border_color, width=2)
-
-    # Corner dots
-    dot_r = int(SIZE * 0.018)
-    for px, py in diamond_pts:
-        draw.ellipse(
-            [(px - dot_r, py - dot_r), (px + dot_r, py + dot_r)],
-            fill=accent_dot
-        )
-
-    # Outer glow
-    glow_extra = int(SIZE * 0.04)
-    glow = [
-        (cx, cy - half - glow_extra), (cx + half + glow_extra, cy),
-        (cx, cy + half + glow_extra), (cx - half - glow_extra, cy),
-    ]
-    overlay = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-    odraw = ImageDraw.Draw(overlay)
-    odraw.line(glow + [glow[0]], fill=glow_color, width=int(SIZE * 0.016))
-    overlay = overlay.filter(ImageFilter.GaussianBlur(radius=SIZE * 0.02))
-    img = Image.alpha_composite(img, overlay)
-    draw = ImageDraw.Draw(img)
-
-    # Center dot
-    center_r = int(SIZE * 0.025)
-    draw.ellipse(
-        [(cx - center_r, cy - center_r), (cx + center_r, cy + center_r)],
-        fill=center_dot
+            dx = x - orb1_cx
+            dy = y - orb1_cy
+            dist = math.sqrt(dx*dx + dy*dy)
+            if dist < orb_radius:
+                ratio = dist / orb_radius
+                alpha = int(255 * (1 - ratio ** 2.5))
+                r_val = int(255 * (1 - ratio * 0.3))
+                g_val = int(200 * (1 - ratio * 0.4))
+                b_val = int(80 * (1 - ratio * 0.5))
+                orb1_draw.point((x, y), fill=(r_val, g_val, b_val, alpha))
+    
+    # Orb 2 (Cool/Indigo) - right
+    orb2_cx = cx + overlap
+    orb2_cy = cy
+    orb2 = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    orb2_draw = ImageDraw.Draw(orb2)
+    for y in range(size):
+        for x in range(size):
+            dx = x - orb2_cx
+            dy = y - orb2_cy
+            dist = math.sqrt(dx*dx + dy*dy)
+            if dist < orb_radius:
+                ratio = dist / orb_radius
+                alpha = int(255 * (1 - ratio ** 2.5))
+                r_val = int(100 * (1 - ratio * 0.3))
+                g_val = int(130 * (1 - ratio * 0.4))
+                b_val = int(240 * (1 - ratio * 0.3))
+                orb2_draw.point((x, y), fill=(r_val, g_val, b_val, alpha))
+    
+    # Glow rings
+    glow_radius = orb_radius + int(size * 0.04)
+    glow1 = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    glow1_draw = ImageDraw.Draw(glow1)
+    glow2 = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    glow2_draw = ImageDraw.Draw(glow2)
+    for y in range(size):
+        for x in range(size):
+            for (gcx, gcy, glow, gdraw, clr) in [
+                (orb1_cx, orb1_cy, glow1, glow1_draw, (255,200,80)),
+                (orb2_cx, orb2_cy, glow2, glow2_draw, (100,130,255))
+            ]:
+                dx = x - gcx
+                dy = y - gcy
+                dist = math.sqrt(dx*dx + dy*dy)
+                if orb_radius <= dist < glow_radius:
+                    ratio = (dist - orb_radius) / (glow_radius - orb_radius)
+                    alpha = int(80 * (1 - ratio))
+                    gdraw.point((x, y), fill=(*clr, alpha))
+    
+    # Build composite
+    base = Image.new("RGBA", (size, size), bg_color)
+    result = Image.new("RGBA", (size, size), (0,0,0,0))
+    result = Image.alpha_composite(result, base)
+    result = Image.alpha_composite(result, glow1)
+    result = Image.alpha_composite(result, glow2)
+    result = Image.alpha_composite(result, orb2)
+    result = Image.alpha_composite(result, orb1)
+    
+    # Apply squircle
+    mask = squircle_mask(size)
+    final = Image.new("RGBA", (size, size), (0,0,0,0))
+    bg_layer = Image.new("RGBA", (size, size), bg_color)
+    final = Image.composite(bg_layer, final, mask)
+    final = Image.composite(result, final, mask)
+    
+    # Subtle border
+    border_draw = ImageDraw.Draw(final)
+    r = int(size * 0.225)
+    border_draw.rounded_rectangle(
+        [(2, 2), (size - 3, size - 3)],
+        radius=r - 2,
+        outline=(255, 255, 255, 30) if is_dark else (0, 0, 0, 20),
+        width=2
     )
+    
+    return final
 
-    # Apply rounded rect mask
-    mask = rounded_rect_mask(SIZE)
-    result = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-    result.paste(img, (0, 0), mask)
+def create_iconset(icon_img, output_dir):
+    os.makedirs(output_dir, exist_ok=True)
+    sizes = {
+        "icon_16x16.png": 16, "icon_16x16@2x.png": 32,
+        "icon_32x32.png": 32, "icon_32x32@2x.png": 64,
+        "icon_128x128.png": 128, "icon_128x128@2x.png": 256,
+        "icon_256x256.png": 256, "icon_256x256@2x.png": 512,
+        "icon_512x512.png": 512, "icon_512x512@2x.png": 1024,
+    }
+    for name, sz in sizes.items():
+        icon_img.resize((sz, sz), Image.LANCZOS).save(os.path.join(output_dir, name))
+    print(f"  Created iconset: {output_dir}")
 
-    return result
-
-
-def main():
-    print("Generating Split Prism v4 icons...")
-
-    dark = create_icon(is_dark=True)
-    dark.save(os.path.join(OUTPUT_DIR, "AppIcon-dark.png"), "PNG")
-    print("  Created: AppIcon-dark.png")
-
-    light = create_icon(is_dark=False)
-    light.save(os.path.join(OUTPUT_DIR, "AppIcon-light.png"), "PNG")
-    print("  Created: AppIcon-light.png")
-
-    print("Done!")
-
+def make_icns(iconset_dir, output_path):
+    subprocess.run(
+        ["iconutil", "-c", "icns", "-o", output_path, iconset_dir],
+        check=True, capture_output=True
+    )
+    print(f"  Created: {output_path}")
 
 if __name__ == "__main__":
-    main()
+    print("🎨 Generating Dual Orb icons...\n")
+    
+    print("[Light Icon]")
+    light_icon = create_dual_orb_icon(SIZE, is_dark=False)
+    light_png = os.path.join(OUTPUT_DIR, "AppIcon-light.png")
+    light_icon.save(light_png)
+    print(f"  Saved: {light_png}")
+    create_iconset(light_icon, os.path.join(OUTPUT_DIR, "AppIcon-light.iconset"))
+    make_icns(os.path.join(OUTPUT_DIR, "AppIcon-light.iconset"),
+              os.path.join(OUTPUT_DIR, "AppIcon-light.icns"))
+    
+    print("\n[Dark Icon]")
+    dark_icon = create_dual_orb_icon(SIZE, is_dark=True)
+    dark_png = os.path.join(OUTPUT_DIR, "AppIcon-dark.png")
+    dark_icon.save(dark_png)
+    print(f"  Saved: {dark_png}")
+    create_iconset(dark_icon, os.path.join(OUTPUT_DIR, "AppIcon-dark.iconset"))
+    make_icns(os.path.join(OUTPUT_DIR, "AppIcon-dark.iconset"),
+              os.path.join(OUTPUT_DIR, "AppIcon-dark.icns"))
+    
+    shutil.copy(os.path.join(OUTPUT_DIR, "AppIcon-light.icns"),
+                os.path.join(OUTPUT_DIR, "AppIcon.icns"))
+    print("\n✅ Done! Dual Orb icons ready.")

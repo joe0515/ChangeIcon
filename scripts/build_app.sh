@@ -7,22 +7,37 @@ BUILD_DIR="$ROOT_DIR/.build/$CONFIGURATION"
 APP_DIR="$ROOT_DIR/build/ChangeIcon.app"
 
 cd "$ROOT_DIR"
+
+echo "🔨 Building main app..."
 swift build -c "$CONFIGURATION"
 
+echo "🔧 Building helper..."
+swiftc "$ROOT_DIR/seticon_helper.swift" -o "$ROOT_DIR/build/seticon"
+
+echo "📦 Packaging..."
 rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS"
 mkdir -p "$APP_DIR/Contents/Resources"
 
 cp "$ROOT_DIR/Resources/Info.plist" "$APP_DIR/Contents/Info.plist"
-cp "$ROOT_DIR/AppIcon-dark.icns" "$APP_DIR/Contents/Resources/AppIcon-dark.icns"
-cp "$ROOT_DIR/AppIcon-light.icns" "$APP_DIR/Contents/Resources/AppIcon-light.icns"
-cp "$ROOT_DIR/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
-cp "$ROOT_DIR/AppIcon-dark.png" "$APP_DIR/Contents/Resources/AppIcon-dark.png"
-cp "$ROOT_DIR/AppIcon-light.png" "$APP_DIR/Contents/Resources/AppIcon-light.png"
-cp -R "$ROOT_DIR/icons" "$APP_DIR/Contents/Resources/icons"
-cp "$BUILD_DIR/ChangeIcon" "$APP_DIR/Contents/MacOS/ChangeIcon"
+cp "$ROOT_DIR/AppIcon-dark.icns" "$APP_DIR/Contents/Resources/AppIcon-dark.icns" 2>/dev/null || true
+cp "$ROOT_DIR/AppIcon-light.icns" "$APP_DIR/Contents/Resources/AppIcon-light.icns" 2>/dev/null || true
+cp "$ROOT_DIR/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns" 2>/dev/null || true
+cp "$ROOT_DIR/AppIcon-dark.png" "$APP_DIR/Contents/Resources/AppIcon-dark.png" 2>/dev/null || true
+cp "$ROOT_DIR/AppIcon-light.png" "$APP_DIR/Contents/Resources/AppIcon-light.png" 2>/dev/null || true
+cp -R "$ROOT_DIR/icons" "$APP_DIR/Contents/Resources/icons" 2>/dev/null || true
+ARCH_DIR="$ROOT_DIR/.build/arm64-apple-macosx/$CONFIGURATION"
+if [[ -f "$ARCH_DIR/ChangeIcon" ]]; then
+  cp "$ARCH_DIR/ChangeIcon" "$APP_DIR/Contents/MacOS/ChangeIcon"
+elif [[ -f "$BUILD_DIR/ChangeIcon" ]]; then
+  cp "$BUILD_DIR/ChangeIcon" "$APP_DIR/Contents/MacOS/ChangeIcon"
+fi
+cp "$ROOT_DIR/build/seticon" "$APP_DIR/Contents/MacOS/seticon"
 chmod +x "$APP_DIR/Contents/MacOS/ChangeIcon"
+chmod +x "$APP_DIR/Contents/MacOS/seticon"
 
-codesign --force --deep --sign - "$APP_DIR" >/dev/null
+echo "✍️ Signing..."
+codesign --force --sign - "$APP_DIR/Contents/MacOS/ChangeIcon" 2>/dev/null || true
+codesign --force --sign - "$APP_DIR" 2>/dev/null || true
 
-echo "$APP_DIR"
+echo "✅ Done: $APP_DIR"

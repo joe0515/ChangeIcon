@@ -49,9 +49,21 @@ struct ContentView: View {
             else { return }
             store.markApplied(
                 id,
-                mode: mode,
-                backupURL: notification.userInfo?["backupURL"] as? URL
+                mode: mode
             )
+        }
+        .alert("🔐 权限设置引导", isPresented: $applier.needsPermissionSetup) {
+            Button("打开系统设置") {
+                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+            Button("我已手动安装") {
+                // User claims they installed manually, let's verify on next apply
+            }
+            Button("稍后", role: .cancel) {}
+        } message: {
+            Text(applier.permissionGuideMessage)
         }
     }
 
@@ -314,6 +326,7 @@ private struct SchemeDetailView: View {
     @EnvironmentObject private var applier: IconApplier
     @EnvironmentObject private var previewCache: IconPreviewCache
     @EnvironmentObject private var suggestionEngine: IconSuggestionEngine
+    @EnvironmentObject private var userIconLibrary: UserIconLibrary
 
     let scheme: IconScheme
     @State private var isApplying = false
@@ -397,35 +410,104 @@ private struct SchemeDetailView: View {
     }
 
     private var iconPickers: some View {
-        Group {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("图标设置")
-                    .font(.headline)
+        VStack(alignment: .leading, spacing: 12) {
+            Text("图标设置")
+                .font(.headline)
 
-                LazyVGrid(columns: [
-                    GridItem(.flexible()),
-                    GridItem(.flexible())
-                ], spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                // Light mode column
+                VStack(spacing: 12) {
                     IconDropTarget(
                         title: "浅色模式图标",
                         systemImage: "sun.max.fill",
                         iconURL: scheme.lightIconURL,
-                        accent: .yellow
-                    ) { url in
-                        store.setIcon(url, for: scheme, mode: .light)
-                    }
+                        accent: .yellow,
+                        onPick: { url in
+                            _ = userIconLibrary.addIcon(from: url, mode: .light)
+                            store.setIcon(url, for: scheme, mode: .light)
+                        },
+                        onDelete: { store.clearIcon(for: scheme, mode: .light) },
+                        defaultIconName: "AppIcon-light"
+                    )
 
+                    if !userIconLibrary.lightIcons.isEmpty {
+                        iconLibraryGrid(mode: .light)
+                    }
+                }
+
+                // Dark mode column
+                VStack(spacing: 12) {
                     IconDropTarget(
                         title: "深色模式图标",
                         systemImage: "moon.fill",
                         iconURL: scheme.darkIconURL,
-                        accent: .indigo
-                    ) { url in
-                        store.setIcon(url, for: scheme, mode: .dark)
+                        accent: .indigo,
+                        onPick: { url in
+                            _ = userIconLibrary.addIcon(from: url, mode: .dark)
+                            store.setIcon(url, for: scheme, mode: .dark)
+                        },
+                        onDelete: { store.clearIcon(for: scheme, mode: .dark) },
+                        defaultIconName: "AppIcon-dark"
+                    )
+
+                    if !userIconLibrary.darkIcons.isEmpty {
+                        iconLibraryGrid(mode: .dark)
                     }
                 }
             }
         }
+    }
+
+    private func iconLibraryGrid(mode: AppearanceMode) -> some View {
+        let icons = mode == .light ? userIconLibrary.lightIcons : userIconLibrary.darkIcons
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(mode == .light ? "浅色图标库" : "深色图标库")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("\(icons.count)")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
+                ForEach(icons, id: \.absoluteString) { iconURL in
+                    iconLibraryItem(iconURL, for: mode)
+                }
+            }
+        }
+    }
+
+    private func iconLibraryItem(_ iconURL: URL, for mode: AppearanceMode) -> some View {
+        Button {
+            store.setIcon(iconURL, for: scheme, mode: mode)
+        } label: {
+            if let image = previewCache.image(for: iconURL, size: NSSize(width: 40, height: 40)) {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 40, height: 40)
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
+            } else {
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(Color(nsColor: .windowBackgroundColor))
+                    .frame(width: 40, height: 40)
+            }
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button("应用到浅色") {
+                store.setIcon(iconURL, for: scheme, mode: .light)
+            }
+            Button("应用到深色") {
+                store.setIcon(iconURL, for: scheme, mode: .dark)
+            }
+            Divider()
+            Button("从库中删除", role: .destructive) {
+                userIconLibrary.removeIcon(iconURL)
+            }
+        }
+        .help(iconURL.lastPathComponent)
     }
     // MARK: - Suggestion Panel (双栏浅色/深色)
 
@@ -889,13 +971,12 @@ private struct SchemeDetailView: View {
 
                 Button {
                     Task {
-                        await applier.restore(scheme, backupURL: store.restoreBackupURL(for: scheme))
+                        await applier.restore(scheme)
                         previewCache.removeAll()
                     }
                 } label: {
                     Label("恢复原始图标", systemImage: "arrow.uturn.backward")
                 }
-                .disabled(store.restoreBackupURL(for: scheme) == nil)
 
                 Button {
                     exportIcon(for: scheme)
@@ -972,6 +1053,8 @@ private struct IconDropTarget: View {
     let iconURL: URL?
     let accent: Color
     let onPick: (URL) -> Void
+    let onDelete: (() -> Void)?
+    let defaultIconName: String
 
     @State private var isTargeted = false
 
@@ -982,10 +1065,19 @@ private struct IconDropTarget: View {
                     .font(.headline)
                     .foregroundStyle(accent)
                 Spacer()
+                if iconURL != nil, let onDelete {
+                    Button(role: .destructive) {
+                        onDelete()
+                    } label: {
+                        Label("删除", systemImage: "trash")
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.red)
+                }
                 Button {
                     pickIcon()
                 } label: {
-                    Label("选择", systemImage: "folder")
+                    Label(iconURL != nil ? "替换" : "选择", systemImage: "folder")
                 }
             }
 
@@ -1027,6 +1119,13 @@ private struct IconDropTarget: View {
     private var iconPreview: some View {
         if let iconURL, let image = previewCache.image(for: iconURL, size: NSSize(width: 76, height: 76)) {
             Image(nsImage: image)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 76, height: 76)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        } else if let defaultURL = Bundle.main.url(forResource: defaultIconName, withExtension: "png"),
+                  let defaultImage = NSImage(contentsOf: defaultURL) {
+            Image(nsImage: defaultImage)
                 .resizable()
                 .scaledToFit()
                 .frame(width: 76, height: 76)

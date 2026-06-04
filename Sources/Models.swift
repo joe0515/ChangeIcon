@@ -87,9 +87,9 @@ struct IconScheme: Codable, Identifiable, Equatable {
     func iconURL(for mode: AppearanceMode) -> URL? {
         switch mode {
         case .light:
-            lightIconURL ?? darkIconURL
+            lightIconURL
         case .dark:
-            darkIconURL ?? lightIconURL
+            darkIconURL
         }
     }
 

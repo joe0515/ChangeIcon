@@ -79,12 +79,20 @@ final class IconSchemeStore: ObservableObject {
         }
     }
 
-    func markApplied(_ schemeID: UUID, mode: AppearanceMode, backupURL: URL?) {
+    func clearIcon(for scheme: IconScheme, mode: AppearanceMode) {
+        guard let index = schemes.firstIndex(where: { $0.id == scheme.id }) else { return }
+        pushUndo()
+        switch mode {
+        case .light:
+            schemes[index].lightIconURL = nil
+        case .dark:
+            schemes[index].darkIconURL = nil
+        }
+    }
+
+    func markApplied(_ schemeID: UUID, mode: AppearanceMode) {
         guard let index = schemes.firstIndex(where: { $0.id == schemeID }) else { return }
         schemes[index].lastAppliedMode = mode
-        if let backupURL, schemes[index].originalIconBackupURL == nil {
-            schemes[index].originalIconBackupURL = backupURL
-        }
     }
 
     func restoreBackupURL(for scheme: IconScheme) -> URL? {
