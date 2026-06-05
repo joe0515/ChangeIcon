@@ -101,7 +101,11 @@ struct MenuBarView: View {
     }
 
     private func showMainWindow() {
-        openWindow(id: "main")
+        if let w = NSApp.windows.first(where: { $0.title.contains("ChangeIcon") }) {
+            w.makeKeyAndOrderFront(nil)
+        } else {
+            openWindow(id: "main")
+        }
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
     }

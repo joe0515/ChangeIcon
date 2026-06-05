@@ -4,11 +4,19 @@ import OSLog
 
 private let logger = Logger(subsystem: "com.local.ChangeIcon", category: "AppDelegate")
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
-    /// Stored activity token to keep App Nap suppressed for the app's lifetime.
-    /// Without this storage, the token is released immediately at end-of-scope
-    /// and the activity protection is never actually active.
+@MainActor
+final class SharedAppState {
+    static let shared = SharedAppState()
+    weak var store: IconSchemeStore?
+    weak var appearance: AppearanceMonitor?
+    weak var applier: IconApplier?
+    weak var previewCache: IconPreviewCache?
+}
+
+@MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var activityToken: NSObjectProtocol?
+    private var statusItem: NSStatusItem?
+    private var menu: NSMenu!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         logger.info("ChangeIcon started")
@@ -17,33 +25,126 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             options: [.latencyCritical, .userInitiated],
             reason: "Monitoring system appearance changes"
         )
+
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        if let icon = NSImage(contentsOfFile: Bundle.main.path(forResource: "menubar-icon", ofType: "png") ?? "") {
+            icon.isTemplate = true
+            icon.size = NSSize(width: 18, height: 18)
+            statusItem?.button?.image = icon
+        }
+
+        menu = NSMenu()
+        menu.delegate = self
+        statusItem?.menu = menu
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        false
+    func menuWillOpen(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let s = SharedAppState.shared
+        guard let store = s.store, let appearance = s.appearance,
+              let applier = s.applier, let previewCache = s.previewCache else {
+            menu.addItem(NSMenuItem(title: "加载中...", action: nil, keyEquivalent: ""))
+            return
+        }
+
+        let modeTitle = appearance.current.title
+        let enabledSchemes = store.schemes.filter(\.enabled)
+
+        // Open main window
+        menu.addItem(NSMenuItem(title: "打开 ChangeIcon", action: #selector(openMainWindow), keyEquivalent: "o"))
+        menu.addItem(.separator())
+
+        // Apply current icon
+        let applyItem = NSMenuItem(title: "立即应用\(modeTitle)图标", action: #selector(applyCurrentIcons), keyEquivalent: "")
+        applyItem.isEnabled = !enabledSchemes.isEmpty && !applier.isApplying
+        menu.addItem(applyItem)
+        menu.addItem(.separator())
+
+        // Quick scheme list
+        if !enabledSchemes.isEmpty {
+            let headerItem = NSMenuItem(title: "快捷方案", action: nil, keyEquivalent: "")
+            headerItem.isEnabled = false
+            menu.addItem(headerItem)
+            for scheme in enabledSchemes.prefix(8) {
+                let item = NSMenuItem(title: scheme.appName, action: #selector(applyScheme(_:)), keyEquivalent: "")
+                item.representedObject = scheme.id.uuidString
+                item.isEnabled = scheme.iconURL(for: appearance.current) != nil && !applier.isApplying
+                let appIcon = previewCache.appIcon(for: scheme.appURL, size: NSSize(width: 16, height: 16))
+                appIcon.isTemplate = false
+                item.image = appIcon
+                menu.addItem(item)
+            }
+            menu.addItem(.separator())
+        }
+
+        // Refresh cache
+        let refreshItem = NSMenuItem(title: "刷新图标缓存", action: #selector(refreshCache), keyEquivalent: "")
+        refreshItem.isEnabled = !applier.isApplying
+        menu.addItem(refreshItem)
+        menu.addItem(.separator())
+
+        // Status info
+        let statusInfo = NSMenuItem(title: "当前模式：\(modeTitle)", action: nil, keyEquivalent: "")
+        statusInfo.isEnabled = false
+        menu.addItem(statusInfo)
+        let countInfo = NSMenuItem(title: "\(enabledSchemes.count) / \(store.schemes.count) 个方案已启用", action: nil, keyEquivalent: "")
+        countInfo.isEnabled = false
+        menu.addItem(countInfo)
+        menu.addItem(.separator())
+
+        // Quit
+        menu.addItem(NSMenuItem(title: "退出 ChangeIcon", action: #selector(quitApp), keyEquivalent: "q"))
     }
 
-    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        logger.info("Termination requested")
-        return .terminateNow
+    @objc private func openMainWindow() {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        NotificationCenter.default.post(name: .openMainWindow, object: nil)
     }
+
+    @objc private func applyCurrentIcons() {
+        guard let s = SharedAppState.shared.store,
+              let a = SharedAppState.shared.appearance,
+              let apl = SharedAppState.shared.applier else { return }
+        Task { await apl.applyIfNeeded(schemes: s.schemes, appearance: a.current, force: true) }
+    }
+
+    @objc private func applyScheme(_ sender: NSMenuItem) {
+        guard let idStr = sender.representedObject as? String,
+              let id = UUID(uuidString: idStr),
+              let s = SharedAppState.shared.store,
+              let a = SharedAppState.shared.appearance,
+              let apl = SharedAppState.shared.applier,
+              let scheme = s.schemes.first(where: { $0.id == id }) else { return }
+        Task { await apl.apply([scheme], appearance: a.current) }
+    }
+
+    @objc private func refreshCache() {
+        guard let s = SharedAppState.shared.store,
+              let apl = SharedAppState.shared.applier,
+              let pc = SharedAppState.shared.previewCache else { return }
+        Task { await apl.refreshIconCache(for: s.schemes.map(\.appURL)); pc.removeAll() }
+    }
+
+    @objc private func quitApp() { NSApp.terminate(nil) }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag, let w = NSApp.windows.first(where: { $0.title.contains("ChangeIcon") }) { w.makeKeyAndOrderFront(nil) }
+        return true
+    }
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply { .terminateNow }
 
     func application(_ sender: NSApplication, openFiles filenames: [String]) {
         let urls = filenames.map { URL(fileURLWithPath: $0) }
-        let iconURLs = urls.filter { url in
-            ["icns", "png", "jpg", "jpeg", "tif", "tiff"].contains(url.pathExtension.lowercased())
-        }
+        let iconURLs = urls.filter { ["icns", "png", "jpg", "jpeg", "tif", "tiff"].contains($0.pathExtension.lowercased()) }
         guard !iconURLs.isEmpty else { return }
-
-        NotificationCenter.default.post(
-            name: .dockIconDropped,
-            object: nil,
-            userInfo: ["urls": iconURLs]
-        )
+        NotificationCenter.default.post(name: .dockIconDropped, object: nil, userInfo: ["urls": iconURLs])
         NSApp.reply(toOpenOrPrint: .success)
     }
 }
 
 extension Notification.Name {
     static let dockIconDropped = Notification.Name("ChangeIcon.dockIconDropped")
+    static let openMainWindow = Notification.Name("ChangeIcon.openMainWindow")
 }

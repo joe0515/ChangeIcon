@@ -78,7 +78,7 @@ final class PermissionManager: ObservableObject {
     @Published var userDismissed = false
 
     var allGranted: Bool {
-        loginItemGranted && fullDiskAccessGranted && accessibilityGranted
+        fullDiskAccessGranted && accessibilityGranted
     }
 
     var missingPermissions: [AppPermission] {
@@ -152,14 +152,7 @@ final class PermissionManager: ObservableObject {
     private func checkLoginItem() {
         if !loginItemRegisterAttempted {
             loginItemRegisterAttempted = true
-            do {
-                try SMAppService.mainApp.register()
-                loginItemGranted = true
-                logger.info("Login item auto-registered successfully")
-                return
-            } catch {
-                logger.warning("Login item registration failed: \(error.localizedDescription)")
-            }
+            try? SMAppService.mainApp.register()
         }
         loginItemGranted = SMAppService.mainApp.status == .enabled
     }

@@ -85,7 +85,22 @@ struct ChangeIconApp: App {
                 }
             }
             .animation(.easeInOut(duration: 0.3), value: shouldShowGuide)
-            .onAppear { permissions.checkAll() }
+            .onReceive(NotificationCenter.default.publisher(for: .openMainWindow)) { _ in
+                NSApp.setActivationPolicy(.regular)
+                NSApp.activate(ignoringOtherApps: true)
+                if let w = NSApp.windows.first(where: { $0.title.contains("ChangeIcon") }) {
+                    w.makeKeyAndOrderFront(nil)
+                } else {
+                    openWindow(id: "main")
+                }
+            }
+            .onAppear {
+                permissions.checkAll()
+                SharedAppState.shared.store = store
+                SharedAppState.shared.appearance = appearance
+                SharedAppState.shared.applier = applier
+                SharedAppState.shared.previewCache = previewCache
+            }
             .alert(dock.restartAlertTitle, isPresented: $dock.needsRestartAlert) {
                 Button("立即重启") {
                     Task { await dock.restartAllQueuedApps() }
@@ -140,13 +155,7 @@ struct ChangeIconApp: App {
                 .environmentObject(permissions)
         }
 
-        MenuBarExtra("ChangeIcon", systemImage: "paintbrush.pointed") {
-            MenuBarView()
-                .environmentObject(store)
-                .environmentObject(appearance)
-                .environmentObject(applier)
-                .environmentObject(previewCache)
-        }
+
     }
 
     // MARK: - Main Content
