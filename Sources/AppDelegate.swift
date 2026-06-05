@@ -11,6 +11,7 @@ final class SharedAppState {
     weak var appearance: AppearanceMonitor?
     weak var applier: IconApplier?
     weak var previewCache: IconPreviewCache?
+    var openWindowAction: ((String) -> Void)?
 }
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -27,15 +28,26 @@ final class SharedAppState {
         )
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        if let icon = NSImage(contentsOfFile: Bundle.main.path(forResource: "menubar-icon", ofType: "png") ?? "") {
+        if let iconPath = Bundle.main.path(forResource: "menubar-icon", ofType: "icns"),
+           let icon = NSImage(contentsOfFile: iconPath) {
             icon.isTemplate = true
             icon.size = NSSize(width: 18, height: 18)
             statusItem?.button?.image = icon
+        } else {
+            logger.error("Failed to load menubar-icon.icns")
         }
 
         menu = NSMenu()
         menu.delegate = self
         statusItem?.menu = menu
+
+        // Always-active observer for main window reopening (survives window close)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleOpenMainWindow),
+            name: .openMainWindow,
+            object: nil
+        )
     }
 
     func menuWillOpen(_ menu: NSMenu) {
@@ -99,7 +111,24 @@ final class SharedAppState {
     @objc private func openMainWindow() {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
-        NotificationCenter.default.post(name: .openMainWindow, object: nil)
+
+        if let w = NSApp.windows.first(where: { $0.title.contains("ChangeIcon") }) {
+            w.makeKeyAndOrderFront(nil)
+        } else {
+            // Window was closed — use SwiftUI to recreate it
+            SharedAppState.shared.openWindowAction?("main")
+        }
+    }
+
+    @objc private func handleOpenMainWindow(_ notification: Notification) {
+        // Safety net: catches .openMainWindow when SwiftUI onReceive may be torn down
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        if let w = NSApp.windows.first(where: { $0.title.contains("ChangeIcon") }) {
+            w.makeKeyAndOrderFront(nil)
+        } else {
+            SharedAppState.shared.openWindowAction?("main")
+        }
     }
 
     @objc private func applyCurrentIcons() {

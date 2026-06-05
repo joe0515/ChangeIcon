@@ -90,8 +90,6 @@ struct ChangeIconApp: App {
                 NSApp.activate(ignoringOtherApps: true)
                 if let w = NSApp.windows.first(where: { $0.title.contains("ChangeIcon") }) {
                     w.makeKeyAndOrderFront(nil)
-                } else {
-                    openWindow(id: "main")
                 }
             }
             .onAppear {

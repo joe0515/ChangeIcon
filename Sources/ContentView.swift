@@ -35,6 +35,9 @@ struct ContentView: View {
         }
         .onAppear {
             selection = selection ?? store.schemes.first?.id
+            SharedAppState.shared.openWindowAction = { id in
+                openWindow(id: id)
+            }
         }
         .onChange(of: store.schemes) { _, schemes in
             if let selection, schemes.contains(where: { $0.id == selection }) {
