@@ -29,6 +29,15 @@ final class SharedAppState {
 
         setupStatusItem()
 
+        // Re-apply icon after a brief delay — defends against any system-level
+        // icon overrides that may happen during app relaunch by macOS.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.refreshStatusItemIcon()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.refreshStatusItemIcon()
+        }
+
         // Always-active observer for main window reopening (survives window close)
         NotificationCenter.default.addObserver(
             self,
@@ -36,6 +45,25 @@ final class SharedAppState {
             name: .openMainWindow,
             object: nil
         )
+    }
+
+    /// Re-applies the menu bar icon to the status item.
+    /// Called on launch and on any event that might reset the button image.
+    private func refreshStatusItemIcon() {
+        guard let button = statusItem?.button else { return }
+        let (icon, source) = loadMenuBarIcon()
+        icon.isTemplate = true
+        icon.size = NSSize(width: 18, height: 18)
+        button.image = icon
+        button.imagePosition = .imageOnly
+        logger.debug("Status item icon refreshed from \(source, privacy: .public)")
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        // After a permissions-triggered restart, macOS may briefly show
+        // the app icon in the status bar before our image takes effect.
+        // Re-apply on every activation to stay defensive.
+        refreshStatusItemIcon()
     }
 
     private func setupStatusItem() {
