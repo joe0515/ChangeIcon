@@ -38,36 +38,45 @@ struct ChangeIconApp: App {
             try? await Task.sleep(nanoseconds: 500_000_000)
             await applier.applyIfNeeded(schemes: schemeList, appearance: mode, force: true)
 
-            // Step 2: Clear global icon cache BEFORE restarting Dock
+            // Step 2: Touch all app bundles so Dock's fsevents notices changes
+            let attrs: [FileAttributeKey: Any] = [.modificationDate: Date()]
+            for scheme in schemeList {
+                try? FileManager.default.setAttributes(attrs, ofItemAtPath: scheme.appURL.path)
+            }
+
+            // Step 3: Clear all icon caches
             dock.clearGlobalIconCache()
             try? await Task.sleep(nanoseconds: 500_000_000)
 
-            // Step 3: Restart Dock to refresh persistent icon cache
+            // Step 4: Restart Dock
             let dk = Process()
             dk.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
             dk.arguments = ["Dock"]
             try? dk.run()
             dk.waitUntilExit()
 
-            // Step 4: Wait for Dock to fully restart before analyzing
+            // Step 5: Wait for Dock to fully restart
             try? await Task.sleep(nanoseconds: 2_000_000_000)
 
-            // Step 5: Check for running / pinned apps
+            // Step 6: Touch again + notify after restart
+            for scheme in schemeList {
+                NSWorkspace.shared.noteFileSystemChanged(scheme.appURL.path)
+                try? FileManager.default.setAttributes(attrs, ofItemAtPath: scheme.appURL.path)
+            }
+
+            // Step 7: Force-refresh pinned apps
             let appPaths = schemeList.map(\.appURL.path)
             let info = dock.analyze(appPaths: appPaths)
             let running = info.filter(\.isRunning)
             let pinned = info.filter(\.isPinned)
 
             if !running.isEmpty {
-                // Running apps need to be restarted to clear process memory cache
                 dock.prepareRestartAlert(runningApps: running.map {
                     ($0.appPath, $0.appName, $0.bundleID)
                 })
-            } else if !pinned.isEmpty {
-                // Pinned-but-not-running: refresh by removing and re-adding to Dock
-                for p in pinned {
-                    dock.refreshDockPersistentItem(appPath: p.appPath)
-                }
+            }
+            for p in pinned {
+                dock.forceDockIconRefresh(appPath: p.appPath, bundleID: p.bundleID)
             }
         }
     }

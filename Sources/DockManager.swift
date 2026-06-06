@@ -151,20 +151,32 @@ final class DockManager: ObservableObject {
 
     // MARK: - Dock persistent item refresh
 
-    /// Refresh a Dock-pinned item by removing it, clearing caches, and re-adding.
-    /// This must be called while the app is NOT running to work correctly.
-    func refreshDockPersistentItem(appPath: String) {
+    /// Force-refresh a single app's Dock icon by clearing all relevant caches
+    /// and rebuilding the Dock persistent entry. Handles the case where Dock
+    /// shows a color-inverted / stale icon while Finder/LaunchPad show correctly.
+    func forceDockIconRefresh(appPath: String, bundleID: String) {
         let appName = fm.displayName(atPath: appPath)
         let appURL = URL(fileURLWithPath: appPath)
-        logger.info("Refreshing Dock persistent item for \(appName)")
+        logger.info("Force-refreshing Dock icon for \(appName)")
 
+        // 1. Touch the app bundle so Dock's fsevents watcher notices
+        let attrs: [FileAttributeKey: Any] = [.modificationDate: Date()]
+        try? fm.setAttributes(attrs, ofItemAtPath: appPath)
+
+        // 2. Clear global caches
         clearGlobalIconCache()
-        Thread.sleep(forTimeInterval: 0.8)
 
-        // Remove from Dock via defaults
+        // 3. Clear Dock's per-app cache entry
+        let dockCachePath = NSHomeDirectory() + "/Library/Containers/com.apple.dock/Data/Library/Caches"
+        if fm.fileExists(atPath: dockCachePath) {
+            try? fm.removeItem(atPath: dockCachePath)
+        }
+
+        Thread.sleep(forTimeInterval: 0.5)
+
+        // 4. Remove existing Dock entry
         let dockSuite = UserDefaults(suiteName: "com.apple.dock")
         if var apps = dockSuite?.array(forKey: "persistent-apps") as? [[String: Any]] {
-            let before = apps.count
             apps.removeAll { entry in
                 guard let td = entry["tile-data"] as? [String: Any],
                       let fd = td["file-data"] as? [String: Any],
@@ -172,14 +184,13 @@ final class DockManager: ObservableObject {
                       let url = URL(string: urlStr) else { return false }
                 return url.standardizedFileURL == appURL.standardizedFileURL
             }
-            logger.info("Dock entry removed: \(before) → \(apps.count)")
             dockSuite?.set(apps, forKey: "persistent-apps")
             dockSuite?.synchronize()
         }
 
-        Thread.sleep(forTimeInterval: 0.3)
+        Thread.sleep(forTimeInterval: 0.2)
 
-        // Add back via defaults
+        // 5. Re-add Dock entry
         if var apps = UserDefaults(suiteName: "com.apple.dock")?.array(forKey: "persistent-apps") as? [[String: Any]] {
             let newEntry: [String: Any] = [
                 "tile-data": [
@@ -195,15 +206,28 @@ final class DockManager: ObservableObject {
             UserDefaults(suiteName: "com.apple.dock")?.synchronize()
         }
 
+        // 6. Restart Dock
         let dk = Process()
         dk.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
         dk.arguments = ["Dock"]
         try? dk.run()
         dk.waitUntilExit()
 
-        // Notify system of file changes
+        // 7. Notify system + touch again after Dock restart
         NSWorkspace.shared.noteFileSystemChanged(appPath)
-        logger.info("Dock persistent item refreshed for \(appName)")
+        try? fm.setAttributes(attrs, ofItemAtPath: appPath)
+
+        logger.info("Dock icon force-refreshed for \(appName)")
+    }
+
+    /// Refresh a Dock-pinned item by removing it, clearing caches, and re-adding.
+    /// This must be called while the app is NOT running to work correctly.
+    func refreshDockPersistentItem(appPath: String) {
+        guard let bundleID = bundleID(for: appPath) else {
+            logger.warning("Cannot refresh Dock item: no bundleID for \(appPath)")
+            return
+        }
+        forceDockIconRefresh(appPath: appPath, bundleID: bundleID)
     }
 
     // MARK: - Batch operations
