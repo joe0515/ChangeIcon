@@ -29,10 +29,13 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             sidebar
-                .navigationSplitViewColumnWidth(min: 260, ideal: 300)
+                .navigationSplitViewColumnWidth(min: 220, ideal: 280)
         } detail: {
             detail
+                .frame(minWidth: 400)
         }
+        .navigationSplitViewStyle(.balanced)
+        .frame(minWidth: 960)
         .onAppear {
             selection = selection ?? store.schemes.first?.id
             SharedAppState.shared.openWindowAction = { id in
