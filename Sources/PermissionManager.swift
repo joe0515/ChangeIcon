@@ -59,7 +59,7 @@ enum AppPermission: String, CaseIterable, Identifiable {
         case .accessibility:
             return "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
         case .appManagement:
-            return "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"
+            return "x-apple.systempreferences:com.apple.preference.security?Privacy_AppManagement"
         }
     }
 }
