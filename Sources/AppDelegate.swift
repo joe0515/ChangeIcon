@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import OSLog
+import Combine
 
 private let logger = Logger(subsystem: "com.local.ChangeIcon", category: "AppDelegate")
 
@@ -11,6 +12,7 @@ final class SharedAppState {
     weak var appearance: AppearanceMonitor?
     weak var applier: IconApplier?
     weak var previewCache: IconPreviewCache?
+    weak var dock: DockManager?
     var openWindowAction: ((String) -> Void)?
 }
 
@@ -18,6 +20,7 @@ final class SharedAppState {
     private var activityToken: NSObjectProtocol?
     private var statusItem: NSStatusItem?
     private var menu: NSMenu!
+    private var appearanceSubscription: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         logger.info("ChangeIcon started")
@@ -36,6 +39,12 @@ final class SharedAppState {
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             self?.refreshStatusItemIcon()
+        }
+
+        // Subscribe to appearance changes for icon switching.
+        // Works even when the main window is closed (unlike onChange on mainContent).
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            self?.setupAppearanceSubscription()
         }
 
         // Always-active observer for main window reopening (survives window close)
@@ -79,6 +88,73 @@ final class SharedAppState {
         // A 1-second delay ensures our refresh runs AFTER updateAppIcon.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             self?.refreshStatusItemIcon()
+        }
+    }
+
+    // MARK: - Appearance-driven icon switching (survives window close)
+
+    /// Set up Combine subscription to appearance changes.
+    /// This runs in AppDelegate so it works even when the main window is closed.
+    private func setupAppearanceSubscription() {
+        guard let appearance = SharedAppState.shared.appearance else {
+            logger.warning("AppearanceMonitor not ready — retrying in 1s")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                self?.setupAppearanceSubscription()
+            }
+            return
+        }
+        appearanceSubscription = appearance.$current
+            .dropFirst() // Skip initial value
+            .sink { [weak self] mode in
+                self?.onAppearanceChanged(to: mode)
+            }
+        logger.info("Appearance subscription active")
+    }
+
+    private func onAppearanceChanged(to mode: AppearanceMode) {
+        let s = SharedAppState.shared
+        guard let store = s.store,
+              let applier = s.applier,
+              let dock = s.dock else {
+            logger.warning("Shared state not ready for appearance change")
+            return
+        }
+        logger.info("Appearance changed to \(mode.title) — applying icons")
+
+        Task {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            await applier.applyIfNeeded(schemes: store.schemes, appearance: mode, force: true)
+
+            // Touch all bundles + clear caches
+            let attrs: [FileAttributeKey: Any] = [.modificationDate: Date()]
+            for scheme in store.schemes {
+                try? FileManager.default.setAttributes(attrs, ofItemAtPath: scheme.appURL.path)
+            }
+            dock.clearGlobalIconCache()
+            try? await Task.sleep(nanoseconds: 500_000_000)
+
+            // Restart Dock
+            let dk = Process()
+            dk.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
+            dk.arguments = ["Dock"]
+            try? dk.run()
+            dk.waitUntilExit()
+
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+
+            // Touch + notify after restart
+            for scheme in store.schemes {
+                NSWorkspace.shared.noteFileSystemChanged(scheme.appURL.path)
+                try? FileManager.default.setAttributes(attrs, ofItemAtPath: scheme.appURL.path)
+            }
+
+            // Force-refresh pinned apps
+            let appPaths = store.schemes.map(\.appURL.path)
+            let info = dock.analyze(appPaths: appPaths)
+            for p in info.filter(\.isPinned) {
+                dock.forceDockIconRefresh(appPath: p.appPath, bundleID: p.bundleID)
+            }
+            logger.info("Appearance-driven icon refresh complete")
         }
     }
 

@@ -108,6 +108,7 @@ struct ChangeIconApp: App {
                 SharedAppState.shared.appearance = appearance
                 SharedAppState.shared.applier = applier
                 SharedAppState.shared.previewCache = previewCache
+                SharedAppState.shared.dock = dock
             }
             .alert(dock.restartAlertTitle, isPresented: $dock.needsRestartAlert) {
                 Button("立即重启") {
