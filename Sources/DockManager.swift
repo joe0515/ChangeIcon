@@ -79,34 +79,41 @@ final class DockManager: ObservableObject {
 
     // MARK: - Global icon cache
 
-    /// Clear the system-wide iconservices cache.
-    /// Uses both user-level and root-privileged removal for maximum coverage.
+    /// Clear ALL known icon caches that Dock reads from.
+    /// The Dock reads icons from multiple cache layers; missing any one
+    /// of them causes the "one-beat-behind" inverted icon problem.
     func clearGlobalIconCache() {
-        // Remove user-accessible caches
-        let userTask = Process()
-        userTask.executableURL = URL(fileURLWithPath: "/usr/bin/find")
-        userTask.arguments = [
+        let cachePaths: [String] = [
+            // Layer 1: Per-user icon cache store (primary source for Dock)
+            NSHomeDirectory() + "/Library/Caches/com.apple.iconservices.store",
+            // Layer 2: Dock-specific container caches
+            NSHomeDirectory() + "/Library/Containers/com.apple.dock/Data/Library/Caches",
+            // Layer 3: System-wide per-user caches (multiple UUID dirs)
             "/private/var/folders",
-            "-name", "com.apple.dock.iconcache",
-            "-o", "-name", "com.apple.iconservices",
-            "-exec", "rm", "-rf", "{}", ";"
         ]
-        try? userTask.run()
-        userTask.waitUntilExit()
 
-        // Remove root-owned caches (silently ignore failures)
-        let rootTask = Process()
-        rootTask.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
-        rootTask.arguments = [
-            "/usr/bin/find", "/private/var/folders",
-            "-name", "com.apple.dock.iconcache",
-            "-o", "-name", "com.apple.iconservices",
-            "-exec", "rm", "-rf", "{}", ";"
-        ]
-        try? rootTask.run()
-        rootTask.waitUntilExit()
+        for path in cachePaths {
+            if path.contains("/private/var/folders") {
+                // For system caches: find and remove specific cache dirs
+                let findTask = Process()
+                findTask.executableURL = URL(fileURLWithPath: "/usr/bin/find")
+                findTask.arguments = [
+                    path,
+                    "-maxdepth", "4",
+                    "(", "-name", "com.apple.iconservices", "-o", "-name", "com.apple.dock.iconcache", ")",
+                    "-exec", "rm", "-rf", "{}", ";"
+                ]
+                try? findTask.run()
+                findTask.waitUntilExit()
+            } else {
+                // For user paths: directly delete
+                if fm.fileExists(atPath: path) {
+                    try? fm.removeItem(atPath: path)
+                }
+            }
+        }
 
-        logger.info("Global icon cache cleared")
+        logger.info("All icon caches cleared")
     }
 
     // MARK: - Restart (quit → refresh Dock → launch)
@@ -163,15 +170,8 @@ final class DockManager: ObservableObject {
         let attrs: [FileAttributeKey: Any] = [.modificationDate: Date()]
         try? fm.setAttributes(attrs, ofItemAtPath: appPath)
 
-        // 2. Clear global caches
+        // 2. Clear ALL icon caches (covers multiple layers)
         clearGlobalIconCache()
-
-        // 3. Clear Dock's per-app cache entry
-        let dockCachePath = NSHomeDirectory() + "/Library/Containers/com.apple.dock/Data/Library/Caches"
-        if fm.fileExists(atPath: dockCachePath) {
-            try? fm.removeItem(atPath: dockCachePath)
-        }
-
         Thread.sleep(forTimeInterval: 0.5)
 
         // 4. Remove existing Dock entry
