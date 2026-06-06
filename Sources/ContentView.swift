@@ -27,14 +27,20 @@ struct ContentView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
-            sidebar
-                .navigationSplitViewColumnWidth(min: 220, ideal: 280)
-        } detail: {
-            detail
-                .frame(minWidth: 400)
+        GeometryReader { geometry in
+            NavigationSplitView {
+                sidebar
+                    .navigationSplitViewColumnWidth(
+                        min: 220,
+                        ideal: min(280, geometry.size.width / 3),
+                        max: max(220, geometry.size.width / 2)
+                    )
+            } detail: {
+                detail
+                    .frame(minWidth: 400)
+            }
+            .navigationSplitViewStyle(.balanced)
         }
-        .navigationSplitViewStyle(.balanced)
         .frame(minWidth: 960)
         .onAppear {
             selection = selection ?? store.schemes.first?.id
