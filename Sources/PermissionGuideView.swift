@@ -96,6 +96,12 @@ struct PermissionGuideView: View {
             permissions.startPolling()
         }
         .onDisappear { permissions.stopPolling() }
+        .onChange(of: permissions.allGranted) { _, granted in
+            if granted {
+                permissions.stopPolling()
+                permissions.userDismissed = true
+            }
+        }
     }
 }
 
