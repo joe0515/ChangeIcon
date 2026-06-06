@@ -42,7 +42,6 @@ final class SharedAppState {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem?.isVisible = true
 
-        // Prefer PNG (single-representation, predictable) over ICNS (multi-representation)
         let (icon, source) = loadMenuBarIcon()
         icon.isTemplate = true
         icon.size = NSSize(width: 18, height: 18)
@@ -55,23 +54,73 @@ final class SharedAppState {
         statusItem?.menu = menu
     }
 
-    /// Load the menu bar icon, preferring PNG (single-representation)
-    /// over ICNS (multi-representation) for consistent rendering.
-    /// Returns the image and the source description for logging.
+    /// Load the menu bar icon. Tries multiple approaches to ensure reliability:
+    ///
+    /// 1. Bundle PNG (single-representation, most predictable)
+    /// 2. Bundle ICNS (multi-representation fallback)
+    /// 3. Programmatic SF Symbol (guaranteed to render)
+    ///
+    /// Returns the image and a source label for logging.
     private func loadMenuBarIcon() -> (NSImage, String) {
-        // 1. Try PNG (256×256 single-rep, predictable scaling to 18×18)
-        if let pngPath = Bundle.main.path(forResource: "menubar-icon", ofType: "png"),
-           let png = NSImage(contentsOfFile: pngPath) {
-            return (png, "menubar-icon.png")
+        // 1. Try PNG from bundle Resources
+        if let pngPath = Bundle.main.path(forResource: "menubar-icon", ofType: "png") {
+            logger.debug("Bundle PNG path: \(pngPath, privacy: .public)")
+            if let png = NSImage(contentsOfFile: pngPath), png.size.width > 0 {
+                return (png, "menubar-icon.png")
+            }
+        } else {
+            logger.warning("Bundle.main.path(forResource: menubar-icon.png) returned nil")
         }
-        // 2. Fallback to ICNS
-        if let icnsPath = Bundle.main.path(forResource: "menubar-icon", ofType: "icns"),
-           let icns = NSImage(contentsOfFile: icnsPath) {
-            return (icns, "menubar-icon.icns")
+
+        // 2. Try ICNS from bundle Resources
+        if let icnsPath = Bundle.main.path(forResource: "menubar-icon", ofType: "icns") {
+            logger.debug("Bundle ICNS path: \(icnsPath, privacy: .public)")
+            if let icns = NSImage(contentsOfFile: icnsPath), icns.size.width > 0 {
+                return (icns, "menubar-icon.icns")
+            }
+        } else {
+            logger.warning("Bundle.main.path(forResource: menubar-icon.icns) returned nil")
         }
-        // 3. Last resort: empty 18×18 image
-        logger.error("No menubar icon found — using empty placeholder")
-        return (NSImage(size: NSSize(width: 18, height: 18)), "placeholder")
+
+        // 3. Direct file access — bypass Bundle API entirely
+        if let resourceURL = Bundle.main.resourceURL {
+            let directPNG = resourceURL.appendingPathComponent("menubar-icon.png")
+            let directICNS = resourceURL.appendingPathComponent("menubar-icon.icns")
+
+            if FileManager.default.fileExists(atPath: directPNG.path),
+               let png = NSImage(contentsOf: directPNG),
+               png.size.width > 0 {
+                logger.warning("Loaded via direct path: \(directPNG.path, privacy: .public)")
+                return (png, "direct: menubar-icon.png")
+            }
+
+            if FileManager.default.fileExists(atPath: directICNS.path),
+               let icns = NSImage(contentsOf: directICNS),
+               icns.size.width > 0 {
+                logger.warning("Loaded via direct path: \(directICNS.path, privacy: .public)")
+                return (icns, "direct: menubar-icon.icns")
+            }
+
+            // Log what's actually in the resources directory for diagnostics
+            if let contents = try? FileManager.default.contentsOfDirectory(atPath: resourceURL.path) {
+                let icons = contents.filter { $0.contains("menubar") || $0.contains("AppIcon") }
+                logger.warning("Resources directory menubar/AppIcon files: \(icons.joined(separator: ", "), privacy: .public)")
+            }
+        }
+
+        // 4. Ultimate fallback: SF Symbol — always available, never fails
+        if let symbol = NSImage(
+            systemSymbolName: "arrow.triangle.swap",
+            accessibilityDescription: "ChangeIcon"
+        ) {
+            logger.warning("Using SF Symbol fallback — menubar-icon resources not found")
+            symbol.isTemplate = true
+            return (symbol, "SF Symbol")
+        }
+
+        // 5. True last resort
+        logger.error("All icon sources failed — empty placeholder")
+        return (NSImage(size: NSSize(width: 18, height: 18)), "empty placeholder")
     }
 
     func menuWillOpen(_ menu: NSMenu) {
