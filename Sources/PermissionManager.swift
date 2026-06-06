@@ -11,6 +11,7 @@ enum AppPermission: String, CaseIterable, Identifiable {
     case loginItem
     case fullDiskAccess
     case accessibility
+    case appManagement
 
     var id: String { rawValue }
 
@@ -19,6 +20,7 @@ enum AppPermission: String, CaseIterable, Identifiable {
         case .loginItem:      "开机启动权限"
         case .fullDiskAccess: "全盘访问权限"
         case .accessibility:  "辅助控制权限"
+        case .appManagement:  "应用管理权限"
         }
     }
 
@@ -30,6 +32,8 @@ enum AppPermission: String, CaseIterable, Identifiable {
             "开启后软件才能修改系统级应用的图标，保证自动切换功能正常生效"
         case .accessibility:
             "开启后软件能稳定监听系统外观变化，保证深浅色图标切换及时生效"
+        case .appManagement:
+            "开启后软件可以修改更多系统级应用的图标，提升兼容性"
         }
     }
 
@@ -38,6 +42,7 @@ enum AppPermission: String, CaseIterable, Identifiable {
         case .loginItem:      "poweron"
         case .fullDiskAccess: "internaldrive"
         case .accessibility:  "accessibility"
+        case .appManagement:  "app.badge.checkmark"
         }
     }
 
@@ -53,41 +58,61 @@ enum AppPermission: String, CaseIterable, Identifiable {
             return "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
         case .accessibility:
             return "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+        case .appManagement:
+            return "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"
         }
     }
 }
 
 // MARK: - Permission Manager
 
-/// Manages detection and status of three system permissions:
+/// Manages detection and status of four system permissions:
 /// - Login item: ensures the app auto-starts on login
 /// - Full disk access: needed to modify icons on system-level apps
 /// - Accessibility: ensures stable background monitoring of theme changes
+/// - App Management: allows deeper app icon modification via Apple Events
 ///
-/// On init, auto-checks all permissions and attempts to register the login item.
-/// Supports polling for permission changes while the user is in System Settings.
+/// **Checks all permissions on init** so the guide reflects reality immediately,
+/// eliminating the brief flash of stale state on first render after a restart.
 @MainActor
 final class PermissionManager: ObservableObject {
     @Published var loginItemGranted = false
     @Published var fullDiskAccessGranted = false
     @Published var accessibilityGranted = false
+    @Published var appManagementGranted = false
 
     private var pollTask: Task<Void, Never>?
 
     /// Whether the user has chosen to skip the permission guide this session.
     @Published var userDismissed = false
 
+    /// Core permissions: the guide won't auto-dismiss until these are all granted.
     var allGranted: Bool {
         fullDiskAccessGranted && accessibilityGranted
     }
 
+    /// All permissions (including recommendations like appManagement).
+    var allChecked: Bool {
+        allGranted && appManagementGranted
+    }
+
     var missingPermissions: [AppPermission] {
         var missing: [AppPermission] = []
-        if !loginItemGranted { missing.append(.loginItem) }
+        if !loginItemGranted    { missing.append(.loginItem) }
         if !fullDiskAccessGranted { missing.append(.fullDiskAccess) }
-        if !accessibilityGranted { missing.append(.accessibility) }
+        if !accessibilityGranted  { missing.append(.accessibility) }
+        if !appManagementGranted  { missing.append(.appManagement) }
         return missing
     }
+
+    /// Check immediately on init so @Published values reflect reality
+    /// before the first SwiftUI render cycle.
+    init() {
+        checkAll()
+        logger.info("PermissionManager initialized — allGranted=\(self.allGranted)")
+    }
+
+    // MARK: - Check All
 
     /// Run all permission checks. Safe to call at any time;
     /// publishes updates via the @Published properties.
@@ -96,6 +121,7 @@ final class PermissionManager: ObservableObject {
         checkLoginItem()
         checkFullDiskAccess()
         checkAccessibility()
+        checkAppManagement()
 
         if !prev, allGranted {
             logger.info("All permissions now granted — auto-dismissing guide")
@@ -105,7 +131,7 @@ final class PermissionManager: ObservableObject {
     // MARK: - Polling
 
     /// Begin polling for permission changes every second.
-    /// Stops automatically when all permissions are granted.
+    /// Stops automatically when core permissions are all granted.
     func startPolling() {
         stopPolling()
         pollTask = Task {
@@ -136,7 +162,6 @@ final class PermissionManager: ObservableObject {
         logger.info("Opening all missing permission settings (\(missing.count))")
         for (i, p) in missing.enumerated() {
             if i > 0 {
-                // Brief delay to avoid overwhelming the system
                 Thread.sleep(forTimeInterval: 0.3)
             }
             openSettings(for: p)
@@ -145,8 +170,6 @@ final class PermissionManager: ObservableObject {
 
     // MARK: - Private Checks
 
-    /// Attempt to auto-register as a login item via SMAppService.
-    /// Falls back to status check if registration fails.
     private var loginItemRegisterAttempted = false
 
     private func checkLoginItem() {
@@ -154,25 +177,55 @@ final class PermissionManager: ObservableObject {
             loginItemRegisterAttempted = true
             try? SMAppService.mainApp.register()
         }
-        loginItemGranted = SMAppService.mainApp.status == .enabled
+        let newValue = SMAppService.mainApp.status == .enabled
+        if loginItemGranted != newValue {
+            logger.info("loginItem: \(self.loginItemGranted) → \(newValue)")
+        }
+        loginItemGranted = newValue
     }
 
     /// Full disk access is required to set icons on files in /Applications.
     /// We test this by attempting to open a system-level file for reading.
     private func checkFullDiskAccess() {
-        // This file is readable iff the app has Full Disk Access permission
         let path = "/Library/Preferences/com.apple.loginwindow.plist"
+        let newValue: Bool
         if let file = FileHandle(forReadingAtPath: path) {
             try? file.close()
-            fullDiskAccessGranted = true
+            newValue = true
         } else {
-            fullDiskAccessGranted = false
+            newValue = false
         }
+        if fullDiskAccessGranted != newValue {
+            logger.info("fullDiskAccess: \(self.fullDiskAccessGranted) → \(newValue)")
+        }
+        fullDiskAccessGranted = newValue
     }
 
     /// Accessibility permission ensures the app can maintain its event loop
     /// and Darwin notification delivery when backgrounded.
     private func checkAccessibility() {
-        accessibilityGranted = AXIsProcessTrusted()
+        let newValue = AXIsProcessTrusted()
+        if accessibilityGranted != newValue {
+            logger.info("accessibility: \(self.accessibilityGranted) → \(newValue)")
+        }
+        accessibilityGranted = newValue
+    }
+
+    /// App Management permission allows Apple Event access to other applications.
+    /// Tested by attempting a minimal AppleScript operation against Finder.
+    /// This is a recommendation (non-blocking) — not included in `allGranted`.
+    private func checkAppManagement() {
+        let script = "tell application \"Finder\" to get name of startup disk"
+        guard let appleScript = NSAppleScript(source: script) else {
+            appManagementGranted = false
+            return
+        }
+        var error: NSDictionary?
+        appleScript.executeAndReturnError(&error)
+        let newValue = error == nil
+        if appManagementGranted != newValue {
+            logger.info("appManagement: \(self.appManagementGranted) → \(newValue)")
+        }
+        appManagementGranted = newValue
     }
 }

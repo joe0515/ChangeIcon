@@ -78,12 +78,19 @@ struct PermissionGuideView: View {
         }
         .frame(width: 520, height: 460)
         .background(Color(nsColor: .windowBackgroundColor))
-        .onAppear { permissions.stopPolling() }
+        .onAppear {
+            // Refresh status immediately — catches any permission changes
+            // that happened while the guide was not visible
+            permissions.checkAll()
+        }
         .onDisappear { permissions.stopPolling() }
         .onChange(of: permissions.allGranted) { _, granted in
             if granted {
                 permissions.stopPolling()
             }
+        }
+        .onChange(of: permissions.missingPermissions.count) { _, _ in
+            // Force view update when individual permissions change
         }
     }
 }
