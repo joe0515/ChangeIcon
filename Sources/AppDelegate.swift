@@ -29,12 +29,12 @@ final class SharedAppState {
 
         setupStatusItem()
 
-        // Re-apply icon after a brief delay — defends against any system-level
-        // icon overrides that may happen during app relaunch by macOS.
+        // Re-apply icon after delays — defends against system-level overrides
+        // during permissions-triggered app relaunch.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             self?.refreshStatusItemIcon()
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             self?.refreshStatusItemIcon()
         }
 
@@ -43,6 +43,14 @@ final class SharedAppState {
             self,
             selector: #selector(handleOpenMainWindow),
             name: .openMainWindow,
+            object: nil
+        )
+
+        // Listen for icon refresh requests from updateAppIcon
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleRefreshStatusItemIcon),
+            name: .refreshStatusItemIcon,
             object: nil
         )
     }
@@ -59,11 +67,19 @@ final class SharedAppState {
         logger.debug("Status item icon refreshed from \(source, privacy: .public)")
     }
 
-    func applicationDidBecomeActive(_ notification: Notification) {
-        // After a permissions-triggered restart, macOS may briefly show
-        // the app icon in the status bar before our image takes effect.
-        // Re-apply on every activation to stay defensive.
+    @objc private func handleRefreshStatusItemIcon() {
+        // Called from updateAppIcon after setting NSApp.applicationIconImage,
+        // which may have propagated to NSStatusItem
         refreshStatusItemIcon()
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        // After a permissions-triggered restart, SwiftUI's .task block may
+        // call updateAppIcon() after we receive applicationDidBecomeActive.
+        // A 1-second delay ensures our refresh runs AFTER updateAppIcon.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            self?.refreshStatusItemIcon()
+        }
     }
 
     private func setupStatusItem() {
@@ -277,4 +293,5 @@ final class SharedAppState {
 extension Notification.Name {
     static let dockIconDropped = Notification.Name("ChangeIcon.dockIconDropped")
     static let openMainWindow = Notification.Name("ChangeIcon.openMainWindow")
+    static let refreshStatusItemIcon = Notification.Name("ChangeIcon.refreshStatusItemIcon")
 }

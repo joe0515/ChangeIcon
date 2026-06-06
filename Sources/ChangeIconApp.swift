@@ -19,7 +19,12 @@ struct ChangeIconApp: App {
     @StateObject private var dock = DockManager()
 
     /// Update the app's own Dock icon to match the current theme.
+    /// Only applies when the main window is visible to avoid side effects
+    /// on NSStatusItem during background activation.
     private func updateAppIcon(for mode: AppearanceMode) {
+        guard NSApp.windows.contains(where: { $0.isVisible && $0.title.contains("ChangeIcon") }) else {
+            return
+        }
         let iconName = mode == .dark ? "AppIcon-dark" : "AppIcon-light"
         guard let iconURL = Bundle.main.url(forResource: iconName, withExtension: "png"),
               let iconImage = NSImage(contentsOf: iconURL) else {
@@ -27,6 +32,9 @@ struct ChangeIconApp: App {
         }
         NSApp.applicationIconImage = iconImage
         NSApp.dockTile.display()
+        // Notify AppDelegate to refresh menu bar icon in case
+        // NSApp.applicationIconImage propagated to NSStatusItem
+        NotificationCenter.default.post(name: .refreshStatusItemIcon, object: nil)
     }
 
     /// Handles appearance changes: apply icons, then handle Dock cache issues.
