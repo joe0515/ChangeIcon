@@ -27,19 +27,12 @@ final class SharedAppState {
             reason: "Monitoring system appearance changes"
         )
 
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        if let iconPath = Bundle.main.path(forResource: "menubar-icon", ofType: "icns"),
-           let icon = NSImage(contentsOfFile: iconPath) {
-            icon.isTemplate = true
-            icon.size = NSSize(width: 18, height: 18)
-            statusItem?.button?.image = icon
-        } else {
-            logger.error("Failed to load menubar-icon.icns")
+        // Defer status item creation to next runloop cycle.
+        // After a permissions-triggered restart, macOS may still be cleaning up
+        // the previous process's menu bar slot; yielding avoids a race.
+        DispatchQueue.main.async { [weak self] in
+            self?.setupStatusItem()
         }
-
-        menu = NSMenu()
-        menu.delegate = self
-        statusItem?.menu = menu
 
         // Always-active observer for main window reopening (survives window close)
         NotificationCenter.default.addObserver(
@@ -48,6 +41,36 @@ final class SharedAppState {
             name: .openMainWindow,
             object: nil
         )
+    }
+
+    private func setupStatusItem() {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        statusItem?.isVisible = true
+
+        if let iconPath = Bundle.main.path(forResource: "menubar-icon", ofType: "icns"),
+           let icon = NSImage(contentsOfFile: iconPath) {
+            icon.isTemplate = true
+            icon.size = NSSize(width: 18, height: 18)
+            statusItem?.button?.image = icon
+            statusItem?.button?.imagePosition = .imageOnly
+            logger.info("Status item created with menubar-icon.icns")
+        } else {
+            // Fallback: try PNG
+            if let pngPath = Bundle.main.path(forResource: "menubar-icon", ofType: "png"),
+               let pngIcon = NSImage(contentsOfFile: pngPath) {
+                pngIcon.isTemplate = true
+                pngIcon.size = NSSize(width: 18, height: 18)
+                statusItem?.button?.image = pngIcon
+                statusItem?.button?.imagePosition = .imageOnly
+                logger.warning("Loaded menubar-icon.png as fallback")
+            } else {
+                logger.error("Failed to load menubar-icon (icns/png), status item created without icon")
+            }
+        }
+
+        menu = NSMenu()
+        menu.delegate = self
+        statusItem?.menu = menu
     }
 
     func menuWillOpen(_ menu: NSMenu) {
