@@ -18,16 +18,8 @@ struct ChangeIconApp: App {
     @StateObject private var permissions = PermissionManager()
     @StateObject private var dock = DockManager()
 
-    /// Update the app's own Dock icon to match the current theme.
-    private func updateAppIcon(for mode: AppearanceMode) {
-        let iconName = mode == .dark ? "AppIcon-dark" : "AppIcon-light"
-        guard let iconURL = Bundle.main.url(forResource: iconName, withExtension: "png"),
-              let iconImage = NSImage(contentsOf: iconURL) else {
-            return
-        }
-        NSApp.applicationIconImage = iconImage
-        NSApp.dockTile.display()
-    }
+    /// No-op: AppIcon files removed to prevent incorrect fallback icon in menu bar.
+    private func updateAppIcon(for mode: AppearanceMode) {}
 
     /// Handles appearance changes: apply icons, then handle Dock cache issues.
     /// The Dock has TWO independent icon caches that setIcon alone cannot clear:
