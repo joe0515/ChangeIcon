@@ -20,8 +20,13 @@ mkdir -p "$APP_DIR/Contents/MacOS"
 mkdir -p "$APP_DIR/Contents/Resources"
 
 cp "$ROOT_DIR/Resources/Info.plist" "$APP_DIR/Contents/Info.plist"
+cp "$ROOT_DIR/AppIcon-dark.icns" "$APP_DIR/Contents/Resources/AppIcon-dark.icns" 2>/dev/null || true
+cp "$ROOT_DIR/AppIcon-light.icns" "$APP_DIR/Contents/Resources/AppIcon-light.icns" 2>/dev/null || true
+cp "$ROOT_DIR/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns" 2>/dev/null || true
 cp "$ROOT_DIR/Resources/menubar-icon.icns" "$APP_DIR/Contents/Resources/menubar-icon.icns" 2>/dev/null || true
 cp "$ROOT_DIR/Resources/menubar-icon.png" "$APP_DIR/Contents/Resources/menubar-icon.png" 2>/dev/null || true
+cp "$ROOT_DIR/AppIcon-dark.png" "$APP_DIR/Contents/Resources/AppIcon-dark.png" 2>/dev/null || true
+cp "$ROOT_DIR/AppIcon-light.png" "$APP_DIR/Contents/Resources/AppIcon-light.png" 2>/dev/null || true
 cp -R "$ROOT_DIR/icons" "$APP_DIR/Contents/Resources/icons" 2>/dev/null || true
 ARCH_DIR="$ROOT_DIR/.build/arm64-apple-macosx/$CONFIGURATION"
 if [[ -f "$ARCH_DIR/ChangeIcon" ]]; then

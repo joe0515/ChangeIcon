@@ -103,7 +103,7 @@ final class SharedAppState {
 
             // Log what's actually in the resources directory for diagnostics
             if let contents = try? FileManager.default.contentsOfDirectory(atPath: resourceURL.path) {
-                let icons = contents.filter { $0.contains("menubar") }
+                let icons = contents.filter { $0.contains("menubar") || $0.contains("AppIcon") }
                 logger.warning("Resources directory menubar/AppIcon files: \(icons.joined(separator: ", "), privacy: .public)")
             }
         }

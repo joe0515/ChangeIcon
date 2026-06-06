@@ -25,6 +25,8 @@
 	</array>
 	<key>CFBundleExecutable</key>
 	<string>ChangeIcon</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.local.ChangeIcon</string>
 	<key>CFBundleInfoDictionaryVersion</key>

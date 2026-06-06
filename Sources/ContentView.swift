@@ -439,7 +439,7 @@ private struct SchemeDetailView: View {
                             store.setIcon(url, for: scheme, mode: .light)
                         },
                         onDelete: { store.clearIcon(for: scheme, mode: .light) },
-                        defaultIconName: nil
+                        defaultIconName: "AppIcon-light"
                     )
 
                     if !userIconLibrary.lightIcons.isEmpty {
@@ -459,7 +459,7 @@ private struct SchemeDetailView: View {
                             store.setIcon(url, for: scheme, mode: .dark)
                         },
                         onDelete: { store.clearIcon(for: scheme, mode: .dark) },
-                        defaultIconName: nil
+                        defaultIconName: "AppIcon-dark"
                     )
 
                     if !userIconLibrary.darkIcons.isEmpty {
@@ -1066,7 +1066,7 @@ private struct IconDropTarget: View {
     let accent: Color
     let onPick: (URL) -> Void
     let onDelete: (() -> Void)?
-    let defaultIconName: String?
+    let defaultIconName: String
 
     @State private var isTargeted = false
 
@@ -1135,8 +1135,7 @@ private struct IconDropTarget: View {
                 .scaledToFit()
                 .frame(width: 76, height: 76)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
-        } else if let defaultName = defaultIconName,
-                  let defaultURL = Bundle.main.url(forResource: defaultName, withExtension: "png"),
+        } else if let defaultURL = Bundle.main.url(forResource: defaultIconName, withExtension: "png"),
                   let defaultImage = NSImage(contentsOf: defaultURL) {
             Image(nsImage: defaultImage)
                 .resizable()
