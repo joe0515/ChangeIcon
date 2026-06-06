@@ -38,14 +38,21 @@ struct ChangeIconApp: App {
             try? await Task.sleep(nanoseconds: 500_000_000)
             await applier.applyIfNeeded(schemes: schemeList, appearance: mode, force: true)
 
-            // Step 2: Restart Dock to refresh persistent icon cache
+            // Step 2: Clear global icon cache BEFORE restarting Dock
+            dock.clearGlobalIconCache()
+            try? await Task.sleep(nanoseconds: 500_000_000)
+
+            // Step 3: Restart Dock to refresh persistent icon cache
             let dk = Process()
             dk.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
             dk.arguments = ["Dock"]
             try? dk.run()
             dk.waitUntilExit()
 
-            // Step 3: Check for running apps (process memory cache issue)
+            // Step 4: Wait for Dock to fully restart before analyzing
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+
+            // Step 5: Check for running / pinned apps
             let appPaths = schemeList.map(\.appURL.path)
             let info = dock.analyze(appPaths: appPaths)
             let running = info.filter(\.isRunning)

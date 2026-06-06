@@ -80,21 +80,32 @@ final class DockManager: ObservableObject {
     // MARK: - Global icon cache
 
     /// Clear the system-wide iconservices cache.
-    /// This is the key to fixing the "always-inverted" icon problem.
-    /// The cache at /private/var/folders/.../com.apple.iconservices stores
-    /// a copy of every app's icon that the Dock reads from. Without clearing
-    /// it, re-adding a Dock entry will load stale icons.
+    /// Uses both user-level and root-privileged removal for maximum coverage.
     func clearGlobalIconCache() {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/find")
-        task.arguments = [
+        // Remove user-accessible caches
+        let userTask = Process()
+        userTask.executableURL = URL(fileURLWithPath: "/usr/bin/find")
+        userTask.arguments = [
             "/private/var/folders",
             "-name", "com.apple.dock.iconcache",
             "-o", "-name", "com.apple.iconservices",
             "-exec", "rm", "-rf", "{}", ";"
         ]
-        try? task.run()
-        task.waitUntilExit()
+        try? userTask.run()
+        userTask.waitUntilExit()
+
+        // Remove root-owned caches (silently ignore failures)
+        let rootTask = Process()
+        rootTask.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
+        rootTask.arguments = [
+            "/usr/bin/find", "/private/var/folders",
+            "-name", "com.apple.dock.iconcache",
+            "-o", "-name", "com.apple.iconservices",
+            "-exec", "rm", "-rf", "{}", ";"
+        ]
+        try? rootTask.run()
+        rootTask.waitUntilExit()
+
         logger.info("Global icon cache cleared")
     }
 
@@ -144,26 +155,32 @@ final class DockManager: ObservableObject {
     /// This must be called while the app is NOT running to work correctly.
     func refreshDockPersistentItem(appPath: String) {
         let appName = fm.displayName(atPath: appPath)
+        let appURL = URL(fileURLWithPath: appPath)
         logger.info("Refreshing Dock persistent item for \(appName)")
 
         clearGlobalIconCache()
-        Thread.sleep(forTimeInterval: 0.6)
+        Thread.sleep(forTimeInterval: 0.8)
 
-        // Remove from Dock via defaults (locale-independent)
-        if let dockPrefs = UserDefaults(suiteName: "com.apple.dock"),
-           var apps = dockPrefs.array(forKey: "persistent-apps") as? [[String: Any]] {
+        // Remove from Dock via defaults
+        let dockSuite = UserDefaults(suiteName: "com.apple.dock")
+        if var apps = dockSuite?.array(forKey: "persistent-apps") as? [[String: Any]] {
+            let before = apps.count
             apps.removeAll { entry in
                 guard let td = entry["tile-data"] as? [String: Any],
                       let fd = td["file-data"] as? [String: Any],
-                      let urlStr = fd["_CFURLString"] as? String else { return false }
-                return urlStr.contains(appPath)
+                      let urlStr = fd["_CFURLString"] as? String,
+                      let url = URL(string: urlStr) else { return false }
+                return url.standardizedFileURL == appURL.standardizedFileURL
             }
-            dockPrefs.set(apps, forKey: "persistent-apps")
+            logger.info("Dock entry removed: \(before) → \(apps.count)")
+            dockSuite?.set(apps, forKey: "persistent-apps")
+            dockSuite?.synchronize()
         }
 
+        Thread.sleep(forTimeInterval: 0.3)
+
         // Add back via defaults
-        if let dockPrefs = UserDefaults(suiteName: "com.apple.dock"),
-           var apps = dockPrefs.array(forKey: "persistent-apps") as? [[String: Any]] {
+        if var apps = UserDefaults(suiteName: "com.apple.dock")?.array(forKey: "persistent-apps") as? [[String: Any]] {
             let newEntry: [String: Any] = [
                 "tile-data": [
                     "file-data": [
@@ -174,7 +191,8 @@ final class DockManager: ObservableObject {
                 "tile-type": "file-tile"
             ]
             apps.append(newEntry)
-            dockPrefs.set(apps, forKey: "persistent-apps")
+            UserDefaults(suiteName: "com.apple.dock")?.set(apps, forKey: "persistent-apps")
+            UserDefaults(suiteName: "com.apple.dock")?.synchronize()
         }
 
         let dk = Process()
@@ -183,6 +201,7 @@ final class DockManager: ObservableObject {
         try? dk.run()
         dk.waitUntilExit()
 
+        // Notify system of file changes
         NSWorkspace.shared.noteFileSystemChanged(appPath)
         logger.info("Dock persistent item refreshed for \(appName)")
     }
