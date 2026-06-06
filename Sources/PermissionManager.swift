@@ -33,7 +33,7 @@ enum AppPermission: String, CaseIterable, Identifiable {
         case .accessibility:
             "开启后软件能稳定监听系统外观变化，保证深浅色图标切换及时生效"
         case .appManagement:
-            "开启后软件可以修改更多系统级应用的图标，提升兼容性"
+            "开启后在隐私与安全性中找到「App 管理」，允许 ChangeIcon 更新其他应用"
         }
     }
 
@@ -59,7 +59,8 @@ enum AppPermission: String, CaseIterable, Identifiable {
         case .accessibility:
             return "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
         case .appManagement:
-            return "x-apple.systempreferences:com.apple.preference.security?Privacy_AppManagement"
+            // macOS 不提供 App 管理子菜单的直接锚点，打开隐私主页
+            return "x-apple.systempreferences:com.apple.preference.security"
         }
     }
 }
