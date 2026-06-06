@@ -105,6 +105,15 @@ final class PermissionManager: ObservableObject {
         return missing
     }
 
+    func isGranted(_ permission: AppPermission) -> Bool {
+        switch permission {
+        case .loginItem:      return loginItemGranted
+        case .fullDiskAccess: return fullDiskAccessGranted
+        case .accessibility:  return accessibilityGranted
+        case .appManagement:  return appManagementGranted
+        }
+    }
+
     /// Check immediately on init so @Published values reflect reality
     /// before the first SwiftUI render cycle.
     init() {

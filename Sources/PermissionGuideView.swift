@@ -2,10 +2,10 @@ import SwiftUI
 
 /// Modal overlay shown on first launch (or when permissions are missing).
 ///
-/// Lists all missing system permissions with descriptions and action buttons.
-/// Auto-dismisses once all permissions are granted, or when the user taps "稍后再说".
+/// Lists all system permissions with status indicators.
+/// Auto-dismisses once all core permissions are granted
+/// (via `shouldShowGuide` in ChangeIconApp).
 struct PermissionGuideView: View {
-    @Environment(\.dismiss) private var dismiss
     @ObservedObject var permissions: PermissionManager
 
     var body: some View {
@@ -35,15 +35,19 @@ struct PermissionGuideView: View {
             // ── Permission List ──
             ScrollView {
                 VStack(spacing: 0) {
-                    ForEach(permissions.missingPermissions) { permission in
-                        PermissionRow(permission: permission) {
+                    ForEach(AppPermission.allCases) { permission in
+                        let granted = permissions.isGranted(permission)
+                        PermissionRow(
+                            permission: permission,
+                            isGranted: granted
+                        ) {
                             permissions.openSettings(for: permission)
                             permissions.startPolling()
                         }
                         .padding(.horizontal, 20)
                         .padding(.vertical, 16)
 
-                        if permission != permissions.missingPermissions.last {
+                        if permission != AppPermission.allCases.last {
                             Divider()
                                 .padding(.horizontal, 20)
                         }
@@ -55,17 +59,25 @@ struct PermissionGuideView: View {
 
             // ── Footer ──
             VStack(spacing: 12) {
-                Button {
-                    permissions.openAllMissingSettings()
-                    permissions.startPolling()
-                } label: {
-                    Label("全部开启", systemImage: "checkmark.circle.fill")
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 20)
+                if permissions.missingPermissions.isEmpty {
+                    Label("所有权限已开启", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .font(.body)
+                        .fontWeight(.medium)
+                        .padding(.vertical, 4)
+                } else {
+                    Button {
+                        permissions.openAllMissingSettings()
+                        permissions.startPolling()
+                    } label: {
+                        Label("全部开启", systemImage: "checkmark.circle.fill")
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 20)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .padding(.horizontal, 20)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .padding(.horizontal, 20)
 
                 Button("稍后再说") {
                     permissions.stopPolling()
@@ -76,22 +88,14 @@ struct PermissionGuideView: View {
             }
             .padding(.vertical, 20)
         }
-        .frame(width: 520, height: 460)
+        .frame(width: 520)
+        .frame(minHeight: 420)
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear {
-            // Refresh status immediately — catches any permission changes
-            // that happened while the guide was not visible
             permissions.checkAll()
+            permissions.startPolling()
         }
         .onDisappear { permissions.stopPolling() }
-        .onChange(of: permissions.allGranted) { _, granted in
-            if granted {
-                permissions.stopPolling()
-            }
-        }
-        .onChange(of: permissions.missingPermissions.count) { _, _ in
-            // Force view update when individual permissions change
-        }
     }
 }
 
@@ -99,6 +103,7 @@ struct PermissionGuideView: View {
 
 private struct PermissionRow: View {
     let permission: AppPermission
+    let isGranted: Bool
     let action: () -> Void
 
     var body: some View {
@@ -106,9 +111,9 @@ private struct PermissionRow: View {
             // Icon
             Image(systemName: permission.iconName)
                 .font(.system(size: 28))
-                .foregroundStyle(.blue)
+                .foregroundStyle(isGranted ? .green : .blue)
                 .frame(width: 44, height: 44)
-                .background(Color.blue.opacity(0.1))
+                .background((isGranted ? Color.green : Color.blue).opacity(0.1))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
 
             // Text
@@ -124,15 +129,27 @@ private struct PermissionRow: View {
 
             Spacer()
 
-            // Action button
-            Button(action: action) {
-                Text("去开启")
-                    .fontWeight(.medium)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 6)
+            // Action / Status button
+            if isGranted {
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.caption)
+                    Text("已开启")
+                        .fontWeight(.medium)
+                }
+                .foregroundStyle(.green)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+            } else {
+                Button(action: action) {
+                    Text("去开启")
+                        .fontWeight(.medium)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
         }
     }
 }
