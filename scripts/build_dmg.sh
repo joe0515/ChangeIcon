@@ -7,7 +7,7 @@ cd "$ROOT_DIR"
 ARCH="${1:-arm64}"
 VERSION="0.5.1"
 DMG_NAME="ChangeIcon-${VERSION}-${ARCH}.dmg"
-APP_DIR="$ROOT_DIR/build/ChangeIcon-${ARCH}.app"
+APP_DIR="$ROOT_DIR/build/ChangeIcon.app"
 STAGING="$ROOT_DIR/build/staging-${ARCH}"
 
 echo "📱 构建 $ARCH DMG: $DMG_NAME"
