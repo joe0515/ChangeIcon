@@ -340,6 +340,11 @@ private struct SchemeDetailView: View {
     @State private var libraryMatches: [URL] = []
     @State private var isSchemeLoading = true
 
+    /// Cached bundle identifier of the target app, used to filter the user icon library.
+    private var appBundleID: String? {
+        Bundle(url: scheme.appURL)?.bundleIdentifier
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -429,7 +434,7 @@ private struct SchemeDetailView: View {
                         iconURL: scheme.lightIconURL,
                         accent: .yellow,
                         onPick: { url in
-                            _ = userIconLibrary.addIcon(from: url, mode: .light)
+                            _ = userIconLibrary.addIcon(from: url, mode: .light, appIdentifier: appBundleID)
                             store.setIcon(url, for: scheme, mode: .light)
                         },
                         onDelete: { store.clearIcon(for: scheme, mode: .light) },
@@ -449,7 +454,7 @@ private struct SchemeDetailView: View {
                         iconURL: scheme.darkIconURL,
                         accent: .indigo,
                         onPick: { url in
-                            _ = userIconLibrary.addIcon(from: url, mode: .dark)
+                            _ = userIconLibrary.addIcon(from: url, mode: .dark, appIdentifier: appBundleID)
                             store.setIcon(url, for: scheme, mode: .dark)
                         },
                         onDelete: { store.clearIcon(for: scheme, mode: .dark) },
@@ -465,20 +470,34 @@ private struct SchemeDetailView: View {
     }
 
     private func iconLibraryGrid(mode: AppearanceMode) -> some View {
-        let icons = mode == .light ? userIconLibrary.lightIcons : userIconLibrary.darkIcons
+        let icons = userIconLibrary.filteredIcons(mode: mode, for: appBundleID)
+        let allCount = mode == .light ? userIconLibrary.lightIcons.count : userIconLibrary.darkIcons.count
         return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(mode == .light ? "浅色图标库" : "深色图标库")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Text("\(icons.count)")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                if icons.count != allCount {
+                    Text("\(icons.count)/\(allCount)")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                } else {
+                    Text("\(icons.count)")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
             }
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
-                ForEach(icons, id: \.absoluteString) { iconURL in
-                    iconLibraryItem(iconURL, for: mode)
+            if icons.isEmpty {
+                Text("还没有为此应用添加图标。拖拽图标到上方区域或点击「选择」按钮添加。")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .padding(.vertical, 8)
+            } else {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
+                    ForEach(icons, id: \.absoluteString) { iconURL in
+                        iconLibraryItem(iconURL, for: mode)
+                    }
                 }
             }
         }
