@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
 ARCH="${1:-arm64}"
-VERSION="0.5.1"
+VERSION="0.5.2"
 DMG_NAME="ChangeIcon-${VERSION}-${ARCH}.dmg"
 APP_DIR="$ROOT_DIR/build/ChangeIcon.app"
 STAGING="$ROOT_DIR/build/staging-${ARCH}"
