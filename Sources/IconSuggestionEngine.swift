@@ -70,7 +70,10 @@ final class IconSuggestionEngine: ObservableObject {
         var results: [IconSuggestion] = []
 
         let originalIcon = NSWorkspace.shared.icon(forFile: appURL.path)
-        let iconBase = originalIcon.copy() as! NSImage
+        guard let iconBase = originalIcon.copy() as? NSImage, iconBase.size.width > 0 else {
+            isLoading = false
+            return
+        }
 
         // ---- 亮度/饱和度调整 (基于原图标) ----
 

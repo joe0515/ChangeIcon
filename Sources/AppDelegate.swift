@@ -21,6 +21,7 @@ final class SharedAppState {
     private var statusItem: NSStatusItem?
     private var menu: NSMenu!
     private var appearanceSubscription: AnyCancellable?
+    private var appearanceChangeTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         logger.info("ChangeIcon started")
@@ -32,18 +33,9 @@ final class SharedAppState {
 
         setupStatusItem()
 
-        // Re-apply icon after delays — defends against system-level overrides
-        // during permissions-triggered app relaunch.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            self?.refreshStatusItemIcon()
-        }
+        // Single delayed refresh covers system-launch icon override window
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             self?.refreshStatusItemIcon()
-        }
-
-        // Subscribe to appearance changes for icon switching.
-        // Works even when the main window is closed (unlike onChange on mainContent).
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
             self?.setupAppearanceSubscription()
         }
 
@@ -121,34 +113,39 @@ final class SharedAppState {
         }
         logger.info("Appearance changed to \(mode.title) — applying icons")
 
-        Task {
+        // Cancel any in-flight appearance change (prevents concurrent Dock restarts)
+        appearanceChangeTask?.cancel()
+        appearanceChangeTask = Task {
+            guard !Task.isCancelled else { return }
             try? await Task.sleep(nanoseconds: 500_000_000)
+            guard !Task.isCancelled else { return }
             await applier.applyIfNeeded(schemes: store.schemes, appearance: mode, force: true)
+            guard !Task.isCancelled else { return }
 
-            // Touch all bundles + clear caches
             let attrs: [FileAttributeKey: Any] = [.modificationDate: Date()]
             for scheme in store.schemes {
                 try? FileManager.default.setAttributes(attrs, ofItemAtPath: scheme.appURL.path)
             }
             dock.clearGlobalIconCache()
+            guard !Task.isCancelled else { return }
             try? await Task.sleep(nanoseconds: 500_000_000)
+            guard !Task.isCancelled else { return }
 
-            // Restart Dock
             let dk = Process()
             dk.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
             dk.arguments = ["Dock"]
             try? dk.run()
             dk.waitUntilExit()
 
+            guard !Task.isCancelled else { return }
             try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard !Task.isCancelled else { return }
 
-            // Touch + notify after restart
             for scheme in store.schemes {
                 NSWorkspace.shared.noteFileSystemChanged(scheme.appURL.path)
                 try? FileManager.default.setAttributes(attrs, ofItemAtPath: scheme.appURL.path)
             }
 
-            // Force-refresh pinned apps
             let appPaths = store.schemes.map(\.appURL.path)
             let info = dock.analyze(appPaths: appPaths)
             for p in info.filter(\.isPinned) {

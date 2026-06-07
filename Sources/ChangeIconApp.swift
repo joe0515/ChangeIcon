@@ -18,69 +18,6 @@ struct ChangeIconApp: App {
     @StateObject private var permissions = PermissionManager()
     @StateObject private var dock = DockManager()
 
-    /// ⚠️ 已禁用: NSApp.applicationIconImage 在 macOS 上会泄漏到 NSStatusItem,
-    /// 导致权限重启后菜单栏图标被覆盖为 AppIcon 而非 menubar-icon。
-    /// Dock 图标改用 Info.plist 的 CFBundleIconFile (AppIcon.icns)。
-    private func updateAppIcon(for mode: AppearanceMode) {}
-
-    /// Handles appearance changes: apply icons, then handle Dock cache issues.
-    /// The Dock has TWO independent icon caches that setIcon alone cannot clear:
-    /// 1. Process memory cache — running apps must be restarted
-    /// 2. Persistent item cache — pinned apps must be removed and re-added
-    private func handleAppearanceChange(mode: AppearanceMode, store: IconSchemeStore, applier: IconApplier) {
-        logger.info("Appearance changed to: \(mode.title, privacy: .public)")
-
-        updateAppIcon(for: mode)
-        let schemeList = store.schemes
-
-        Task {
-            // Step 1: Apply all icons to file metadata (immediate Finder/LaunchPad update)
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            await applier.applyIfNeeded(schemes: schemeList, appearance: mode, force: true)
-
-            // Step 2: Touch all app bundles so Dock's fsevents notices changes
-            let attrs: [FileAttributeKey: Any] = [.modificationDate: Date()]
-            for scheme in schemeList {
-                try? FileManager.default.setAttributes(attrs, ofItemAtPath: scheme.appURL.path)
-            }
-
-            // Step 3: Clear all icon caches
-            dock.clearGlobalIconCache()
-            try? await Task.sleep(nanoseconds: 500_000_000)
-
-            // Step 4: Restart Dock
-            let dk = Process()
-            dk.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
-            dk.arguments = ["Dock"]
-            try? dk.run()
-            dk.waitUntilExit()
-
-            // Step 5: Wait for Dock to fully restart
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-
-            // Step 6: Touch again + notify after restart
-            for scheme in schemeList {
-                NSWorkspace.shared.noteFileSystemChanged(scheme.appURL.path)
-                try? FileManager.default.setAttributes(attrs, ofItemAtPath: scheme.appURL.path)
-            }
-
-            // Step 7: Force-refresh pinned apps
-            let appPaths = schemeList.map(\.appURL.path)
-            let info = dock.analyze(appPaths: appPaths)
-            let running = info.filter(\.isRunning)
-            let pinned = info.filter(\.isPinned)
-
-            if !running.isEmpty {
-                dock.prepareRestartAlert(runningApps: running.map {
-                    ($0.appPath, $0.appName, $0.bundleID)
-                })
-            }
-            for p in pinned {
-                dock.forceDockIconRefresh(appPath: p.appPath, bundleID: p.bundleID)
-            }
-        }
-    }
-
     private var shouldShowGuide: Bool {
         !permissions.userDismissed && !permissions.allGranted
     }
@@ -181,12 +118,10 @@ struct ChangeIconApp: App {
             .frame(minWidth: 960, minHeight: 660)
             .task {
                 logger.info("Initial appearance: \(appearance.current.title, privacy: .public)")
-                updateAppIcon(for: appearance.current)
                 await applier.applyIfNeeded(schemes: store.schemes, appearance: appearance.current)
             }
-            .onChange(of: appearance.current) { _, mode in
-                handleAppearanceChange(mode: mode, store: store, applier: applier)
-            }
+            // Appearance changes are handled by AppDelegate.onAppearanceChanged()
+            // to avoid double Dock restart (AppDelegate + this onChange)
             .onReceive(NotificationCenter.default.publisher(for: .dockIconDropped)) { notification in
                 guard let urls = notification.userInfo?["urls"] as? [URL],
                       let iconURL = urls.first else { return }

@@ -1,5 +1,8 @@
 import AppKit
 import Foundation
+import OSLog
+
+private let logger = Logger(subsystem: "com.local.ChangeIcon", category: "Store")
 
 // MARK: - Undo State Snapshot
 
@@ -10,7 +13,7 @@ private struct SchemesSnapshot {
 @MainActor
 final class IconSchemeStore: ObservableObject {
     @Published var schemes: [IconScheme] = [] {
-        didSet { save() }
+        didSet { scheduleSave() }
     }
     @Published var importSummary = ""
     @Published var canUndo = false
@@ -20,6 +23,7 @@ final class IconSchemeStore: ObservableObject {
     private let fileURL: URL
     private var undoStack: [SchemesSnapshot] = []
     private let maxUndoStack = 30
+    private var saveWorkItem: DispatchWorkItem?
 
     init() {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -196,12 +200,30 @@ final class IconSchemeStore: ObservableObject {
 
     private func load() {
         guard let data = try? Data(contentsOf: fileURL) else { return }
-        schemes = (try? decoder.decode([IconScheme].self, from: data)) ?? []
+        do {
+            schemes = try decoder.decode([IconScheme].self, from: data)
+        } catch {
+            logger.error("Failed to decode schemes: \(error.localizedDescription)")
+        }
+    }
+
+    /// Debounced save: coalesces rapid writes within 0.3s into one disk operation.
+    private func scheduleSave() {
+        saveWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            self?.save()
+        }
+        saveWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: item)
     }
 
     private func save() {
-        guard let data = try? encoder.encode(schemes) else { return }
-        try? data.write(to: fileURL, options: .atomic)
+        do {
+            let data = try encoder.encode(schemes)
+            try data.write(to: fileURL, options: .atomic)
+        } catch {
+            logger.error("Failed to save schemes: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - Helpers
