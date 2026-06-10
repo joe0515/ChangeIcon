@@ -1,0 +1,9 @@
+.build/
+build/
+Releases/
+.DS_Store
+*.dSYM
+*.dmg
+__MACOSX
+*.swp
+*~
