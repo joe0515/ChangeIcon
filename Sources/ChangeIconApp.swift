@@ -40,6 +40,7 @@ struct ChangeIconApp: App {
                     w.makeKeyAndOrderFront(nil)
                 }
             }
+            .modifier(OpenWindowBridge())
             .onAppear {
                 permissions.checkAll()
                 SharedAppState.shared.store = store
@@ -141,6 +142,24 @@ struct ChangeIconApp: App {
                         await applier.apply(enabledSchemes, appearance: appearance.current)
                         previewCache.removeAll()
                     }
+                }
+            }
+    }
+}
+
+// MARK: - OpenWindow Bridge
+
+/// Captures the SwiftUI `openWindow` environment action and stores it on
+/// `SharedAppState` so AppDelegate can recreate the main window after it
+/// has been closed (e.g. Dock icon click).
+private struct OpenWindowBridge: ViewModifier {
+    @Environment(\.openWindow) private var openWindow
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear {
+                SharedAppState.shared.openWindowAction = { id in
+                    openWindow(id: id)
                 }
             }
     }

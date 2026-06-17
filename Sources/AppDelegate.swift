@@ -367,7 +367,14 @@ final class SharedAppState {
     @objc private func quitApp() { NSApp.terminate(nil) }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag, let w = NSApp.windows.first(where: { $0.title.contains("ChangeIcon") }) { w.makeKeyAndOrderFront(nil) }
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        if let w = NSApp.windows.first(where: { $0.title.contains("ChangeIcon") }) {
+            w.makeKeyAndOrderFront(nil)
+        } else {
+            // Window was closed — ask SwiftUI to recreate it via openWindow
+            SharedAppState.shared.openWindowAction?("main")
+        }
         return true
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
