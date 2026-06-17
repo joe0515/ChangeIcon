@@ -5,7 +5,11 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
 ARCH="${1:-arm64}"
-VERSION="0.5.5"
+VERSION="0.6.0"
+
+# Use Xcode toolchain (required for macOS 27 SDK builds)
+export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode-beta.app/Contents/Developer}"
+echo "🛠  Toolchain: $DEVELOPER_DIR"
 DMG_NAME="ChangeIcon-${VERSION}-${ARCH}.dmg"
 APP_DIR="$ROOT_DIR/build/ChangeIcon.app"
 STAGING="$ROOT_DIR/build/staging-${ARCH}"
@@ -32,9 +36,17 @@ cp -R "$ROOT_DIR/icons" "$APP_DIR/Contents/Resources/icons" 2>/dev/null || true
 
 # Build binary (release)
 echo "🔨 Compiling main binary..."
-swift build -c release --arch "$ARCH" 2>&1 | tail -1
-ARCH_DIR="$ROOT_DIR/.build/${ARCH}-apple-macosx/release"
-cp "$ARCH_DIR/ChangeIcon" "$APP_DIR/Contents/MacOS/ChangeIcon"
+swift build -c release --arch "$ARCH" --disable-sandbox 2>&1 | tail -1
+# Copy release binary (SwiftPM may use either old or new build layout)
+BINARY_SRC="$ROOT_DIR/.build/out/Products/Release/ChangeIcon"
+if [ ! -f "$BINARY_SRC" ]; then
+    BINARY_SRC="$ROOT_DIR/.build/release/ChangeIcon"
+fi
+if [ ! -f "$BINARY_SRC" ]; then
+    echo "❌ Release binary not found. Build may have failed."
+    exit 1
+fi
+cp "$BINARY_SRC" "$APP_DIR/Contents/MacOS/ChangeIcon"
 chmod +x "$APP_DIR/Contents/MacOS/ChangeIcon"
 
 # Build and copy helper

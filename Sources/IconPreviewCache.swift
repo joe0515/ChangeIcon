@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import UniformTypeIdentifiers
 
 @MainActor
 final class IconPreviewCache: ObservableObject {
@@ -12,19 +13,28 @@ final class IconPreviewCache: ObservableObject {
             return image
         }
 
-        let appName = appURL.deletingPathExtension().lastPathComponent
-
-        if let libraryIconURL = IconLibrary.shared.findIcon(for: appName),
-           let libraryImage = NSImage(contentsOf: libraryIconURL) {
-            libraryImage.size = size
-            cache.setObject(libraryImage, forKey: key)
-            return libraryImage
+        // For uninstalled apps, skip library matching and use a generic icon
+        let isInstalled = FileManager.default.fileExists(atPath: appURL.path)
+        if !isInstalled {
+            let placeholder = NSWorkspace.shared.icon(for: .applicationBundle)
+            placeholder.size = size
+            cache.setObject(placeholder, forKey: key)
+            return placeholder
         }
 
+        // Always get the current icon from NSWorkspace — this reflects the
+        // app's actual current icon including any modifications made by ChangeIcon.
         let image = NSWorkspace.shared.icon(forFile: appURL.path)
         image.size = size
         cache.setObject(image, forKey: key)
         return image
+    }
+
+    /// Invalidate the cached icon for a given app so the next request
+    /// re-fetches the current icon from the file system.
+    func invalidateAppIcon(for appURL: URL, size: NSSize = NSSize(width: 96, height: 96)) {
+        let key = "app:\(appURL.path):\(size.width)x\(size.height)" as NSString
+        cache.removeObject(forKey: key)
     }
 
     func image(for fileURL: URL, size: NSSize = NSSize(width: 128, height: 128)) -> NSImage? {

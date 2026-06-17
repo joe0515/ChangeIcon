@@ -57,6 +57,10 @@ struct ContentView: View {
                 id,
                 mode: mode
             )
+            // Invalidate preview cache so app icon reflects current state
+            if let scheme = store.schemes.first(where: { $0.id == id }) {
+                previewCache.invalidateAppIcon(for: scheme.appURL)
+            }
         }
         .alert("🔐 权限设置引导", isPresented: $applier.needsPermissionSetup) {
             Button("打开系统设置") {
@@ -285,39 +289,67 @@ struct ContentView: View {
 
 private struct AppRow: View {
     @EnvironmentObject private var previewCache: IconPreviewCache
+    @EnvironmentObject private var appearance: AppearanceMonitor
 
     let scheme: IconScheme
     let isCurrentMode: Bool
 
+    private var displayIcon: NSImage {
+        if scheme.isAppInstalled {
+            return previewCache.appIcon(for: scheme.appURL, size: NSSize(width: 34, height: 34))
+        }
+        // For uninstalled apps, show the previously set icon for the current mode
+        if let iconURL = scheme.iconURL(for: appearance.current),
+           let image = NSImage(contentsOf: iconURL) {
+            image.size = NSSize(width: 34, height: 34)
+            return image
+        }
+        // Fallback: generic app placeholder
+        let placeholder = NSWorkspace.shared.icon(for: .applicationBundle)
+        placeholder.size = NSSize(width: 34, height: 34)
+        return placeholder
+    }
+
     var body: some View {
         HStack(spacing: 10) {
-            Image(nsImage: previewCache.appIcon(for: scheme.appURL, size: NSSize(width: 34, height: 34)))
+            Image(nsImage: displayIcon)
                 .resizable()
                 .frame(width: 34, height: 34)
                 .clipShape(RoundedRectangle(cornerRadius: 7))
+                .opacity(scheme.isAppInstalled ? 1 : 0.7)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(scheme.appName)
                     .lineLimit(1)
                     .font(.headline)
+                    .foregroundStyle(scheme.isAppInstalled ? .primary : .secondary)
                 HStack(spacing: 6) {
-                    Circle()
-                        .fill(scheme.enabled ? Color.green : Color.secondary)
-                        .frame(width: 6, height: 6)
-                    Text(scheme.enabled ? "已启用" : "已停用")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if isCurrentMode {
-                        Text("· 已匹配")
+                    if !scheme.isAppInstalled {
+                        Circle()
+                            .fill(Color.orange)
+                            .frame(width: 6, height: 6)
+                        Text("已卸载")
                             .font(.caption)
-                            .foregroundStyle(.blue)
+                            .foregroundStyle(.orange)
+                    } else {
+                        Circle()
+                            .fill(scheme.enabled ? Color.green : Color.secondary)
+                            .frame(width: 6, height: 6)
+                        Text(scheme.enabled ? "已启用" : "已停用")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if isCurrentMode {
+                            Text("· 已匹配")
+                                .font(.caption)
+                                .foregroundStyle(.blue)
+                        }
                     }
                 }
             }
 
             Spacer()
 
-            if let mode = scheme.lastAppliedMode {
+            if scheme.isAppInstalled, let mode = scheme.lastAppliedMode {
                 Image(systemName: mode == .light ? "sun.max.fill" : "moon.fill")
                     .font(.caption2)
                     .foregroundStyle(mode == .light ? .yellow : .indigo)
@@ -344,8 +376,20 @@ private struct SchemeDetailView: View {
     @State private var isSchemeLoading = true
 
     /// Cached bundle identifier of the target app, used to filter the user icon library.
+    /// Falls back to reading from the app bundle, then to looking up from stored icon associations.
     private var appBundleID: String? {
-        Bundle(url: scheme.appURL)?.bundleIdentifier
+        // 1. Stored cache (persisted even when app is uninstalled)
+        if let cached = scheme.cachedBundleID { return cached }
+        // 2. Read from live app bundle
+        if let live = Bundle(url: scheme.appURL)?.bundleIdentifier { return live }
+        // 3. Infer from existing icon associations (fallback for pre-v0.6.0 schemes)
+        let iconURLs = [scheme.lightIconURL, scheme.darkIconURL].compactMap { $0 }
+        for url in iconURLs {
+            if let apps = userIconLibrary.associations(for: url.lastPathComponent), !apps.isEmpty {
+                return apps.first
+            }
+        }
+        return nil
     }
 
     var body: some View {

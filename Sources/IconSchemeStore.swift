@@ -56,7 +56,20 @@ final class IconSchemeStore: ObservableObject {
 
     func addApp(_ url: URL) {
         guard url.pathExtension.lowercased() == "app" else { return }
-        guard !schemes.contains(where: { $0.appURL.standardizedFileURL == url.standardizedFileURL }) else { return }
+
+        // If the same app URL was previously added but is now uninstalled,
+        // reactivate the existing scheme instead of ignoring the drop.
+        if let existingIndex = schemes.firstIndex(where: {
+            $0.appURL.standardizedFileURL == url.standardizedFileURL
+        }) {
+            if !schemes[existingIndex].isAppInstalled {
+                pushUndo()
+                schemes[existingIndex].appURL = url  // update URL (path may have changed)
+                importSummary = "已重新匹配「\(schemes[existingIndex].appName)」的图标方案。"
+            }
+            return
+        }
+
         pushUndo()
         schemes.append(IconScheme(appURL: url))
     }

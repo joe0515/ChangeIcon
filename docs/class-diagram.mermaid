@@ -1,0 +1,111 @@
+classDiagram
+    class IconApplier {
+        -FileManager fm
+        -Bool isApplying
+        +OperationLog[] logs
+        +(Int, Int)? currentProgress
+        +Bool needsPermissionSetup
+        +String permissionGuideMessage
+        --
+        +applyIfNeeded(schemes, appearance, force) async
+        +apply(schemes, appearance) async
+        +restore(scheme) async
+        +refreshIconCache(appURLs) async
+        -applyIconOnce(app, icon) async throws
+        -runBatchAdminCommand(items) async throws
+        -runSudoHelper(helper, app, icon, uid, gid) async throws
+        -runBatchViaOsascript(items) async throws
+        -bundleHelperPath() String?
+        -showSudoersSetupPrompt(items) async Bool
+        -selectStrategy() async AdminStrategy
+        -clearIcon(app) async throws
+        +ensureMacOSIconPadding(image) NSImage$
+        -iconHasSufficientPadding(image) Bool$
+        -appendLog(message, isError)
+    }
+
+    class SudoersManager {
+        +Bool isConfigured
+        +String sudoersFilePath$
+        --
+        +checkConfiguration() async Bool
+        +install() async throws
+        +uninstall() async throws
+        +validateRuleContent() Bool
+        -checkIncludedirInSudoers() Bool
+        -writeRuleFile(helperPath) throws
+        -removeRuleFile() throws
+    }
+
+    class IconScheme {
+        +UUID id
+        +URL appURL
+        +URL? lightIconURL
+        +URL? darkIconURL
+        +Bool enabled
+        +AppearanceMode? lastAppliedMode
+        +URL? originalIconBackupURL
+        +IconShape iconShape
+        --
+        +String appName
+        +iconURL(for) URL?
+    }
+
+    class AppearanceMode {
+        <<enumeration>>
+        light
+        dark
+        --
+        +String title
+    }
+
+    class IconError {
+        <<enumeration>>
+        missingIcon
+        missingBundleIcon
+        commandFailed(String)
+        systemApp(String)
+        needsAdmin(String)
+        adminCancelled(String)
+        sudoersNotConfigured
+        --
+        +String? errorDescription
+    }
+
+    class SudoersError {
+        <<enumeration>>
+        installFailed(String)
+        uninstallFailed(String)
+        validationFailed(String)
+        includedirMissing
+        --
+        +String? errorDescription
+    }
+
+    class AdminStrategy {
+        <<enumeration>>
+        sudoNopasswd
+        sudoersGuide
+        osascriptFallback
+    }
+
+    class PermissionManager {
+        +Bool loginItemGranted
+        +Bool fullDiskAccessGranted
+        +Bool accessibilityGranted
+        +Bool appManagementGranted
+        +Bool userDismissed
+        +Bool allGranted
+        --
+        +checkAll()
+        +startPolling()
+        +stopPolling()
+        +openSettings(permission)
+    }
+
+    IconApplier --> SudoersManager : uses
+    IconApplier --> IconError : throws
+    IconApplier --> AdminStrategy : selects
+    IconApplier ..> IconScheme : processes
+    SudoersManager --> SudoersError : throws
+    IconScheme --> AppearanceMode : references

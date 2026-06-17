@@ -2,11 +2,15 @@ import SwiftUI
 
 /// Modal overlay shown on first launch (or when permissions are missing).
 ///
-/// Lists all system permissions with status indicators.
-/// Auto-dismisses once all core permissions are granted
-/// (via `shouldShowGuide` in ChangeIconApp).
+/// Lists all system permissions with status indicators, plus the
+/// optional sudoers admin authorization for zero-password icon switching.
+/// Auto-dismisses once all core permissions are granted.
 struct PermissionGuideView: View {
     @ObservedObject var permissions: PermissionManager
+    @ObservedObject var sudoersManager: SudoersManager
+
+    @State private var isConfiguringSudoers = false
+    @State private var sudoersErrorMessage: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -35,7 +39,34 @@ struct PermissionGuideView: View {
             // ── Permission List ──
             ScrollView {
                 VStack(spacing: 0) {
-                    ForEach(AppPermission.allCases) { permission in
+                    // Core permissions shown before admin authorization
+                    ForEach(AppPermission.allCases.filter { $0 != .accessibility && $0 != .appManagement }) { permission in
+                        let granted = permissions.isGranted(permission)
+                        PermissionRow(
+                            permission: permission,
+                            isGranted: granted,
+                            isManualOnly: false
+                        ) {
+                            permissions.openSettings(for: permission)
+                            permissions.startPolling()
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 16)
+
+                        Divider()
+                            .padding(.horizontal, 20)
+                    }
+
+                    // ── Sudoers Admin Authorization (placed above accessibility) ──
+                    sudoersAdminRow
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 16)
+
+                    Divider()
+                        .padding(.horizontal, 20)
+
+                    // Accessibility + App Management (shown after admin auth)
+                    ForEach(AppPermission.allCases.filter { $0 == .accessibility || $0 == .appManagement }) { permission in
                         let granted = permissions.isGranted(permission)
                         let isManual = permission == .appManagement
                         PermissionRow(
@@ -49,7 +80,7 @@ struct PermissionGuideView: View {
                         .padding(.horizontal, 20)
                         .padding(.vertical, 16)
 
-                        if permission != AppPermission.allCases.last {
+                        if permission != .appManagement {
                             Divider()
                                 .padding(.horizontal, 20)
                         }
@@ -62,11 +93,18 @@ struct PermissionGuideView: View {
             // ── Footer ──
             VStack(spacing: 12) {
                 if permissions.missingPermissions.isEmpty {
-                    Label("所有权限已开启", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .padding(.vertical, 4)
+                    VStack(spacing: 6) {
+                        Label("所有权限已开启", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .font(.body)
+                            .fontWeight(.medium)
+                        if !sudoersManager.isConfigured {
+                            Text("管理员免密码授权可在上方配置，或稍后在软件设置中授权。")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
                 } else {
                     Button {
                         permissions.openAllMissingSettings()
@@ -93,15 +131,87 @@ struct PermissionGuideView: View {
         .frame(width: 520)
         .frame(minHeight: 420)
         .background(Color(nsColor: .windowBackgroundColor))
-        .onAppear {
+        .task {
             permissions.checkAll()
             permissions.startPolling()
+            await sudoersManager.checkConfiguration()
         }
         .onDisappear { permissions.stopPolling() }
-        .onChange(of: permissions.allGranted) { _, granted in
-            if granted {
-                permissions.stopPolling()
-                permissions.userDismissed = true
+        .alert("管理员授权失败", isPresented: Binding(
+            get: { sudoersErrorMessage != nil },
+            set: { if !$0 { sudoersErrorMessage = nil } }
+        )) {
+            Button("好的") { sudoersErrorMessage = nil }
+        } message: {
+            Text(sudoersErrorMessage ?? "")
+        }
+    }
+
+    // MARK: - Sudoers Admin Row
+
+    private var sudoersAdminRow: some View {
+        HStack(spacing: 16) {
+            Image(systemName: sudoersManager.isConfigured ? "shield.checkered" : "shield.lefthalf.filled")
+                .font(.system(size: 28))
+                .foregroundStyle(sudoersManager.isConfigured ? .green : .blue)
+                .frame(width: 44, height: 44)
+                .background((sudoersManager.isConfigured ? Color.green : Color.blue).opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("管理员免密码授权")
+                    .font(.body)
+                    .fontWeight(.semibold)
+                Text(sudoersManager.isConfigured
+                    ? "已配置，切换图标无需输入管理员密码。"
+                    : "一次配置即可永久免密码切换图标。若跳过，后续可在软件设置中重新授权。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer()
+
+            if sudoersManager.isConfigured {
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.caption)
+                    Text("已开启")
+                        .fontWeight(.medium)
+                }
+                .foregroundStyle(.green)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+            } else {
+                Button {
+                    Task {
+                        isConfiguringSudoers = true
+                        defer { isConfiguringSudoers = false }
+                        do {
+                            try await sudoersManager.install()
+                        } catch let error as SudoersError {
+                            if case .adminCancelled = error {
+                                // User cancelled — not an error
+                            }
+                        } catch {
+                            sudoersErrorMessage = error.localizedDescription
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        if isConfiguringSudoers {
+                            ProgressView()
+                                .scaleEffect(0.7)
+                        }
+                        Text("去开启")
+                            .fontWeight(.medium)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(isConfiguringSudoers)
             }
         }
     }

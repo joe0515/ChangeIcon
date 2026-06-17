@@ -59,6 +59,8 @@ struct IconScheme: Codable, Identifiable, Equatable {
     var lastAppliedMode: AppearanceMode?
     var originalIconBackupURL: URL?
     var iconShape: IconShape
+    /// Cached bundle identifier — persisted even when the app is uninstalled
+    var cachedBundleID: String?
 
     init(
         id: UUID = UUID(),
@@ -68,7 +70,8 @@ struct IconScheme: Codable, Identifiable, Equatable {
         enabled: Bool = true,
         lastAppliedMode: AppearanceMode? = nil,
         originalIconBackupURL: URL? = nil,
-        iconShape: IconShape = .none
+        iconShape: IconShape = .none,
+        cachedBundleID: String? = nil
     ) {
         self.id = id
         self.appURL = appURL
@@ -78,10 +81,22 @@ struct IconScheme: Codable, Identifiable, Equatable {
         self.lastAppliedMode = lastAppliedMode
         self.originalIconBackupURL = originalIconBackupURL
         self.iconShape = iconShape
+        self.cachedBundleID = cachedBundleID ?? Bundle(url: appURL)?.bundleIdentifier
     }
 
     var appName: String {
         appURL.deletingPathExtension().lastPathComponent
+    }
+
+    /// Whether the target .app bundle currently exists on disk.
+    var isAppInstalled: Bool {
+        FileManager.default.fileExists(atPath: appURL.path)
+    }
+
+    /// The bundle identifier of the target app, cached at scheme creation.
+    /// Persists even when the app is temporarily uninstalled.
+    var appBundleID: String? {
+        Bundle(url: appURL)?.bundleIdentifier
     }
 
     func iconURL(for mode: AppearanceMode) -> URL? {
@@ -97,7 +112,7 @@ struct IconScheme: Codable, Identifiable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case id, appURL, lightIconURL, darkIconURL, enabled
-        case lastAppliedMode, originalIconBackupURL, iconShape
+        case lastAppliedMode, originalIconBackupURL, iconShape, cachedBundleID
     }
 
     init(from decoder: Decoder) throws {
@@ -110,6 +125,9 @@ struct IconScheme: Codable, Identifiable, Equatable {
         lastAppliedMode = try container.decodeIfPresent(AppearanceMode.self, forKey: .lastAppliedMode)
         originalIconBackupURL = try container.decodeIfPresent(URL.self, forKey: .originalIconBackupURL)
         iconShape = try container.decodeIfPresent(IconShape.self, forKey: .iconShape) ?? .none
+        // Fall back to reading from the current bundle if not previously cached
+        cachedBundleID = try container.decodeIfPresent(String.self, forKey: .cachedBundleID)
+            ?? Bundle(url: appURL)?.bundleIdentifier
     }
 }
 

@@ -17,6 +17,7 @@ struct ChangeIconApp: App {
     /// Permission detection and management
     @StateObject private var permissions = PermissionManager()
     @StateObject private var dock = DockManager()
+    @StateObject private var sudoersManager = SudoersManager.shared
 
     private var shouldShowGuide: Bool {
         !permissions.userDismissed && !permissions.allGranted
@@ -26,7 +27,7 @@ struct ChangeIconApp: App {
         WindowGroup("ChangeIcon", id: "main") {
             ZStack {
                 if shouldShowGuide {
-                    PermissionGuideView(permissions: permissions)
+                    PermissionGuideView(permissions: permissions, sudoersManager: sudoersManager)
                 } else {
                     mainContent
                 }
@@ -46,6 +47,7 @@ struct ChangeIconApp: App {
                 SharedAppState.shared.applier = applier
                 SharedAppState.shared.previewCache = previewCache
                 SharedAppState.shared.dock = dock
+                Task { await sudoersManager.checkConfiguration() }
             }
             .alert(dock.restartAlertTitle, isPresented: $dock.needsRestartAlert) {
                 Button("立即重启") {
@@ -99,6 +101,7 @@ struct ChangeIconApp: App {
             SettingsView()
                 .environmentObject(store)
                 .environmentObject(permissions)
+                .environmentObject(sudoersManager)
         }
 
 

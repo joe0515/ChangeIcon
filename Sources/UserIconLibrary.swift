@@ -103,6 +103,12 @@ final class UserIconLibrary: ObservableObject {
         saveAssociations()
     }
 
+    /// Look up which apps are associated with a given icon filename.
+    /// Returns the set of bundle identifiers, or nil if none.
+    func associations(for filename: String) -> Set<String>? {
+        appAssociations[filename]
+    }
+
     /// Get icons filtered by app for a given mode.
     /// - Icons that have NO associations (legacy) are visible to all apps.
     /// - Icons with associations are only visible to matching apps.
@@ -110,8 +116,12 @@ final class UserIconLibrary: ObservableObject {
         let allIcons = mode == .light ? lightIcons : darkIcons
 
         guard let appID = appIdentifier else {
-            // No app selected — show all icons
-            return allIcons
+            // Unknown app (uninstalled / no bundle ID) — only show
+            // globally-shared icons that haven't been associated with
+            // any specific app yet.  This prevents leaking other apps' icons.
+            return allIcons.filter { iconURL in
+                appAssociations[iconURL.lastPathComponent] == nil
+            }
         }
 
         return allIcons.filter { iconURL in

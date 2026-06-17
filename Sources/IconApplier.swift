@@ -46,6 +46,12 @@ final class IconApplier: ObservableObject {
             currentProgress = (i + 1, schemes.count)
             guard let iconURL = scheme.iconURL(for: appearance) else { continue }
 
+            // Skip uninstalled apps — they will be re-matched when reinstalled
+            guard scheme.isAppInstalled else {
+                appendLog("\(scheme.appName): 应用已卸载，跳过", isError: false)
+                continue
+            }
+
             do {
                 try await applyIconOnce(app: scheme.appURL, icon: iconURL)
                 appliedPaths.append(scheme.appURL.path)
@@ -199,8 +205,25 @@ final class IconApplier: ObservableObject {
     }
 
     // ──────────────────────────────────────────────
-    // MARK: - Batch Admin
+    // MARK: - Batch Admin (new sudo-first strategy)
     // ──────────────────────────────────────────────
+    ///
+    /// On macOS 14–15, most apps are handled by direct NSWorkspace.setIcon() in
+    /// Pass 1 above.  Only root-owned apps fall through to this batch path.
+    ///
+    /// On macOS 27 beta, system-wide write-protection on /Applications causes
+    /// *all* apps to enter this path.
+    ///
+    /// ## Strategy (three-tier fallback)
+    ///
+    /// 1. **sudo NOPASSWD** — if `sudo -n` works, invoke `seticon_helper`
+    ///    directly with zero password prompts.
+    /// 2. **One-time setup guide** — if sudoers is not yet configured and the
+    ///    user hasn't previously declined, show a setup dialog.  On acceptance,
+    ///    install the sudoers rule (one password prompt) then use path 1.
+    /// 3. **osascript fallback** — if the user declined setup or sudoers is
+    ///    unavailable, fall back to the legacy `osascript with administrator
+    ///    privileges` path (one prompt per batch operation).
 
     private func runBatchAdminCommand(_ items: [(app: String, icon: String, name: String)]) async throws {
         guard let helper = bundleHelperPath() else {
@@ -210,6 +233,93 @@ final class IconApplier: ObservableObject {
         let uid = getuid()
         let gid = getgid()
 
+        // ── Tier 1: sudo NOPASSWD already configured → zero prompts ──
+        let sudoersOK = await SudoersManager.shared.checkConfiguration()
+        if sudoersOK {
+            logger.info("Batch admin: sudo NOPASSWD active — running \(items.count) items silently")
+            for item in items {
+                try await runSudoHelper(helper: helper, app: item.app, icon: item.icon, uid: uid, gid: gid)
+            }
+            return
+        }
+
+        // ── Tier 2: first-time setup guide ──
+        if !SudoersManager.shared.hasUserRejected {
+            logger.info("Batch admin: sudoers not configured — showing setup prompt")
+            let userAccepted = await showSudoersSetupPrompt(items: items)
+            if userAccepted {
+                do {
+                    try await SudoersManager.shared.install()
+                    logger.info("Batch admin: sudoers installed — running \(items.count) items")
+                    for item in items {
+                        try await runSudoHelper(helper: helper, app: item.app, icon: item.icon, uid: uid, gid: gid)
+                    }
+                    return
+                } catch let error as SudoersError {
+                    logger.error("Batch admin: sudoers install failed — \(error.errorDescription ?? "unknown", privacy: .public)")
+                    appendLog("免密码授权配置失败: \(error.errorDescription ?? "未知错误")，使用传统方式", isError: true)
+                    // Do NOT call recordRejection() — install failure ≠ user rejection.
+                    // The user should be able to retry on the next batch operation.
+                } catch {
+                    logger.error("Batch admin: sudoers install failed — \(error.localizedDescription, privacy: .public)")
+                    appendLog("免密码授权配置失败: \(error.localizedDescription)，使用传统方式", isError: true)
+                    // Do NOT call recordRejection() — install failure ≠ user rejection.
+                }
+            } else {
+                logger.info("Batch admin: user declined sudoers setup")
+                SudoersManager.shared.recordRejection()
+            }
+        } else {
+            logger.info("Batch admin: user previously rejected sudoers — skipping prompt")
+        }
+
+        // ── Tier 3: legacy osascript fallback ──
+        logger.info("Batch admin: falling back to osascript path for \(items.count) items")
+        try await runBatchViaOsascript(items, helper: helper, uid: uid, gid: gid)
+    }
+
+    /// Execute a single `seticon_helper` call via `sudo -n`.
+    ///
+    /// `-n` (non-interactive) guarantees this will never block waiting for a
+    /// password.  If NOPASSWD is not configured the call will fail immediately
+    /// with exit code 1 rather than presenting a password prompt.
+    private func runSudoHelper(helper: String, app: String, icon: String, uid: uid_t, gid: gid_t) async throws {
+        logger.info("runSudoHelper: \(app, privacy: .public)")
+
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
+            p.arguments = ["-n", helper, "set", app, icon, "\(uid)", "\(gid)"]
+
+            let err = Pipe()
+            p.standardError = err
+            p.standardOutput = Pipe()
+
+            p.terminationHandler = { proc in
+                if proc.terminationStatus == 0 {
+                    cont.resume()
+                } else {
+                    let e = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+                        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    logger.error("runSudoHelper failed exit=\(proc.terminationStatus): \(e, privacy: .public)")
+                    cont.resume(throwing: IconError.needsAdmin("sudo 执行失败: \(e)"))
+                }
+            }
+            do {
+                try p.run()
+            } catch {
+                logger.error("runSudoHelper: failed to launch sudo — \(error.localizedDescription, privacy: .public)")
+                cont.resume(throwing: IconError.needsAdmin("无法启动 sudo"))
+            }
+        }
+    }
+
+    /// Legacy batch admin path using `osascript with administrator privileges`.
+    ///
+    /// This is the **existing** behaviour preserved intact as a fallback when
+    /// the sudo NOPASSWD path is unavailable.  It presents one authentication
+    /// dialog per batch operation.
+    private func runBatchViaOsascript(_ items: [(app: String, icon: String, name: String)], helper: String, uid: uid_t, gid: gid_t) async throws {
         var lines = ["#!/bin/bash", "set -e"]
         for item in items {
             // Pass user uid/gid so the helper (running as root) can chown
@@ -224,7 +334,7 @@ final class IconApplier: ObservableObject {
 
         let appNames = items.map(\.name).joined(separator: "、")
         let osaScript = "do shell script \"bash '\(scriptURL.path)' 2>&1\" with administrator privileges with prompt \"ChangeIcon 需要管理员权限来修改以下应用的图标：\(appNames)\""
-        logger.info("Batch admin: \(items.count) apps")
+        logger.info("Batch admin (osascript): \(items.count) apps")
 
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             let p = Process()
@@ -248,6 +358,40 @@ final class IconApplier: ObservableObject {
             }
             do { try p.run() } catch {
                 cont.resume(throwing: IconError.needsAdmin("无法启动授权进程"))
+            }
+        }
+    }
+
+    /// Present a modal dialog inviting the user to set up passwordless sudo.
+    ///
+    /// The dialog explains that a one-time configuration eliminates future
+    /// password prompts during icon switching.  Returns `true` if the user
+    /// clicks the "配置" button.
+    private func showSudoersSetupPrompt(items: [(app: String, icon: String, name: String)]) async -> Bool {
+        let appNames = items.map(\.name).joined(separator: "、")
+
+        return await withCheckedContinuation { cont in
+            DispatchQueue.main.async {
+                let alert = NSAlert()
+                alert.messageText = "配置免密码图标切换"
+                alert.informativeText = """
+                ChangeIcon 需要管理员权限来修改以下应用的图标：
+
+                \(appNames)
+
+                您可以进行一次性配置，此后切换图标将不再弹出密码提示。
+
+                配置过程需要一次管理员授权（写入一条 sudoers 规则），随后即可永久免密码使用。
+
+                您也可以选择「暂不」，继续使用每次输入密码的传统方式。
+                """
+                alert.alertStyle = .informational
+                alert.addButton(withTitle: "配置")
+                alert.addButton(withTitle: "暂不")
+                alert.icon = NSImage(systemSymbolName: "shield.lefthalf.filled", accessibilityDescription: "权限")
+
+                let response = alert.runModal()
+                cont.resume(returning: response == .alertFirstButtonReturn)
             }
         }
     }

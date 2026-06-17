@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import ServiceManagement
 import OSLog
+import Darwin
 
 private let permLog = Logger(subsystem: "com.local.ChangeIcon", category: "Permission")
 
@@ -183,14 +184,57 @@ final class PermissionManager: ObservableObject {
 
     private func checkFullDiskAccess() {
         let home = NSHomeDirectory()
-        let path = home + "/Library/Application Support/com.apple.TCC/TCC.db"
-        let newValue: Bool
-        if let file = FileHandle(forReadingAtPath: path) {
+        let tccDir = home + "/Library/Application Support/com.apple.TCC"
+        let tccPath = tccDir + "/TCC.db"
+
+        var newValue = false
+
+        // Method 1: FileHandle (original approach)
+        if let file = FileHandle(forReadingAtPath: tccPath) {
             try? file.close()
             newValue = true
-        } else {
-            newValue = false
         }
+
+        // Method 2: Darwin access() syscall (may bypass sandbox restrictions on macOS 27)
+        if !newValue {
+            if access(tccPath, R_OK) == 0 {
+                newValue = true
+            }
+        }
+
+        // Method 3: Try listing the TCC directory (catches read access to sibling .db files)
+        if !newValue {
+            if let contents = try? FileManager.default.contentsOfDirectory(atPath: tccDir), !contents.isEmpty {
+                newValue = true
+            }
+        }
+
+        // Method 4: Check if we can get file attributes on TCC.db
+        // (uses a different kernel path than FileHandle / access)
+        if !newValue {
+            if let _ = try? FileManager.default.attributesOfItem(atPath: tccPath) {
+                newValue = true
+            }
+        }
+
+        // Method 5: Try other FDA-protected paths on macOS
+        // ~/Library/Mail, ~/Library/Safari, ~/Library/Messages all require FDA
+        if !newValue {
+            let fdaPaths = [
+                home + "/Library/Mail",
+                home + "/Library/Safari",
+                home + "/Library/Messages",
+                home + "/Library/Calendars",
+            ]
+            for path in fdaPaths {
+                if let contents = try? FileManager.default.contentsOfDirectory(atPath: path), !contents.isEmpty {
+                    newValue = true
+                    permLog.info("fullDiskAccess detected via alternate path: \(path)")
+                    break
+                }
+            }
+        }
+
         if fullDiskAccessGranted != newValue {
             permLog.info("fullDiskAccess: \(self.fullDiskAccessGranted) → \(newValue)")
         }

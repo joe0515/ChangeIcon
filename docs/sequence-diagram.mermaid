@@ -1,0 +1,64 @@
+sequenceDiagram
+    participant AD as AppDelegate
+    participant IA as IconApplier
+    participant SM as SudoersManager
+    participant NW as NSWorkspace
+    participant SUDO as sudo
+    participant SH as seticon_helper
+    participant OSA as osascript
+    participant DM as DockManager
+    participant User
+
+    AD->>IA: applyIfNeeded(schemes, appearance)
+    IA->>IA: isApplying = true
+
+    loop Pass 1: 每个 scheme (快速路径)
+        IA->>NW: setIcon(image, forFile:)
+        alt 成功
+            NW-->>IA: true
+            IA->>IA: appendLog("已应用")
+        else 失败 → needsAdmin
+            NW-->>IA: false
+            IA->>IA: adminBatch.append(...)
+        end
+    end
+
+    alt adminBatch 非空
+        IA->>SM: checkConfiguration()
+        
+        alt sudoers 已配置 ✅
+            SM-->>IA: true
+            loop 每个 item
+                IA->>SUDO: sudo -n seticon_helper set <app> <icon> <uid> <gid>
+                Note over SUDO: NOPASSWD — 零弹窗
+                SUDO->>SH: (以 root 运行)
+                SH->>SH: chown(appPath, uid, gid)
+                SH->>NW: setIcon(image, forFile:)
+                SH-->>IA: OK
+            end
+            
+        else sudoers 未配置 + 首次
+            SM-->>IA: false
+            IA->>User: 弹出引导对话框
+            User->>SM: 同意一次性配置
+            SM->>OSA: osascript with administrator privileges
+            OSA-->>User: 🔐 管理员密码弹窗（仅一次）
+            OSA->>OSA: 修改 /etc/sudoers + /etc/sudoers.d/changeicon
+            SM-->>IA: 配置完成
+            loop 每个 item
+                IA->>SUDO: sudo -n seticon_helper ...
+                SUDO->>SH: (以 root 运行)
+                SH-->>IA: OK
+            end
+            
+        else sudoers 未配置 + 用户拒绝
+            SM-->>IA: false (拒绝)
+            IA->>OSA: runBatchViaOsascript() 回退
+            OSA-->>User: 🔐 每次弹窗
+            OSA->>SH: set <app> <icon> <uid> <gid>
+        end
+    end
+
+    IA->>NW: noteFileSystemChanged(paths)
+    IA->>DM: 刷新 Dock 图标缓存
+    IA->>IA: isApplying = false
