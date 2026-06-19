@@ -321,11 +321,12 @@ final class SharedAppState {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
 
-        if let w = NSApp.windows.first(where: { $0.title.contains("ChangeIcon") }) {
+        // Prefer openWindowAction — it targets the WindowGroup(id: "main")
+        // specifically, avoiding false matches with Settings/other windows.
+        if let action = SharedAppState.shared.openWindowAction {
+            action("main")
+        } else if let w = NSApp.windows.first(where: { $0.title.contains("ChangeIcon") }) {
             w.makeKeyAndOrderFront(nil)
-        } else {
-            // Window was closed — use SwiftUI to recreate it
-            SharedAppState.shared.openWindowAction?("main")
         }
     }
 
@@ -333,10 +334,10 @@ final class SharedAppState {
         // Safety net: catches .openMainWindow when SwiftUI onReceive may be torn down
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
-        if let w = NSApp.windows.first(where: { $0.title.contains("ChangeIcon") }) {
+        if let action = SharedAppState.shared.openWindowAction {
+            action("main")
+        } else if let w = NSApp.windows.first(where: { $0.title.contains("ChangeIcon") }) {
             w.makeKeyAndOrderFront(nil)
-        } else {
-            SharedAppState.shared.openWindowAction?("main")
         }
     }
 
@@ -369,11 +370,10 @@ final class SharedAppState {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
-        if let w = NSApp.windows.first(where: { $0.title.contains("ChangeIcon") }) {
+        if let action = SharedAppState.shared.openWindowAction {
+            action("main")
+        } else if let w = NSApp.windows.first(where: { $0.title.contains("ChangeIcon") }) {
             w.makeKeyAndOrderFront(nil)
-        } else {
-            // Window was closed — ask SwiftUI to recreate it via openWindow
-            SharedAppState.shared.openWindowAction?("main")
         }
         return true
     }
