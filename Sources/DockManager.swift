@@ -44,6 +44,15 @@ final class DockManager: ObservableObject {
         Bundle(path: appPath)?.bundleIdentifier
     }
 
+    /// Extract bundle identifier from a Dock `persistent-apps` entry dictionary.
+    private func entryBundleID(_ entry: [String: Any]) -> String? {
+        guard let td = entry["tile-data"] as? [String: Any],
+              let fd = td["file-data"] as? [String: Any],
+              let urlStr = fd["_CFURLString"] as? String,
+              let url = URL(string: urlStr) else { return nil }
+        return Bundle(url: url)?.bundleIdentifier
+    }
+
     func isAppRunning(bundleID: String) -> Bool {
         NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == bundleID }
     }
@@ -182,27 +191,17 @@ final class DockManager: ObservableObject {
         try? await Task.sleep(nanoseconds: 500_000_000)
 
         // 3. Remove existing Dock entry (capture original index and entry first)
+        // Use bundleID matching instead of URL string comparison — more robust
+        // against URL normalization differences (trailing slash, encoding, etc.).
         var originalIndex: Int?
         var originalEntry: [String: Any]?
         let dockSuite = UserDefaults(suiteName: "com.apple.dock")
         if var apps = dockSuite?.array(forKey: "persistent-apps") as? [[String: Any]] {
-            if let idx = apps.firstIndex(where: { entry in
-                guard let td = entry["tile-data"] as? [String: Any],
-                      let fd = td["file-data"] as? [String: Any],
-                      let urlStr = fd["_CFURLString"] as? String,
-                      let url = URL(string: urlStr) else { return false }
-                return url.standardizedFileURL == appURL.standardizedFileURL
-            }) {
+            if let idx = apps.firstIndex(where: { entryBundleID($0) == bundleID }) {
                 originalIndex = idx
                 originalEntry = apps[idx]
             }
-            apps.removeAll { entry in
-                guard let td = entry["tile-data"] as? [String: Any],
-                      let fd = td["file-data"] as? [String: Any],
-                      let urlStr = fd["_CFURLString"] as? String,
-                      let url = URL(string: urlStr) else { return false }
-                return url.standardizedFileURL == appURL.standardizedFileURL
-            }
+            apps.removeAll { entryBundleID($0) == bundleID }
             dockSuite?.set(apps, forKey: "persistent-apps")
             dockSuite?.synchronize()
         }
@@ -211,6 +210,10 @@ final class DockManager: ObservableObject {
 
         // 4. Re-add Dock entry at original position preserving all fields
         if var apps = UserDefaults(suiteName: "com.apple.dock")?.array(forKey: "persistent-apps") as? [[String: Any]] {
+            // Safety: remove any duplicate entries that may have been auto-restored
+            // by the Dock during the sleep window above.
+            apps.removeAll { entryBundleID($0) == bundleID }
+
             let newEntry: [String: Any]
             if var entry = originalEntry {
                 // Rebuild from original entry — only update the path in file-data
