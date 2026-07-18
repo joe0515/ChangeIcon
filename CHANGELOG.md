@@ -12,8 +12,14 @@
 - **根因**：`DockManager.forceDockIconRefresh()` 移除 Dock 条目后使用 `append` 重新添加到数组末尾，丢失了原始位置索引和 GUID 等元数据
 - **修复**：移除前捕获原始索引和完整条目字典，重新添加时在原始位置 `insert`，保留所有 Dock 元数据
 
+### Dock 栏出现重复图标
+
+- **现象**：上版修复后，部分目标应用在 Dock 栏出现两个相同的重复图标
+- **根因**：使用 `_CFURLString` 字符串匹配条目，在 `removeAll` 与 `insert` 之间的 sleep 窗口内 Dock 可能自动恢复条目
+- **修复**：改用 `bundleID` 匹配条目，重新插入前再次清理可能存在的重复条目，确保目标应用始终只有 1 个条目
+
 ### 涉及文件
-- `Sources/DockManager.swift` — `forceDockIconRefresh()` 方法重构
+- `Sources/DockManager.swift` — `forceDockIconRefresh()` 方法重构（插入位置 + bundleID 匹配）
 
 ---
 
