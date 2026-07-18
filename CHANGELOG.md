@@ -1,3 +1,22 @@
+# ChangeIcon v0.6.1
+
+> 发布日期：2026-07-18
+
+---
+
+## 🔧 Bug 修复
+
+### Dock 栏固定应用图标切换后位置丢失
+
+- **现象**：目标应用固定在 Dock 栏自定义位置时，切换图标清除缓存后，应用位置全部移到 Dock 最左侧
+- **根因**：`DockManager.forceDockIconRefresh()` 移除 Dock 条目后使用 `append` 重新添加到数组末尾，丢失了原始位置索引和 GUID 等元数据
+- **修复**：移除前捕获原始索引和完整条目字典，重新添加时在原始位置 `insert`，保留所有 Dock 元数据
+
+### 涉及文件
+- `Sources/DockManager.swift` — `forceDockIconRefresh()` 方法重构
+
+---
+
 # ChangeIcon v0.6.0
 
 > 发布日期：2026-06-17

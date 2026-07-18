@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
 ARCH="${1:-arm64}"
-VERSION="0.6.0"
+VERSION="0.6.1"
 
 # Use Xcode toolchain (required for macOS 27 SDK builds)
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode-beta.app/Contents/Developer}"

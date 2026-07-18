@@ -181,9 +181,21 @@ final class DockManager: ObservableObject {
         clearGlobalIconCache()
         try? await Task.sleep(nanoseconds: 500_000_000)
 
-        // 3. Remove existing Dock entry
+        // 3. Remove existing Dock entry (capture original index and entry first)
+        var originalIndex: Int?
+        var originalEntry: [String: Any]?
         let dockSuite = UserDefaults(suiteName: "com.apple.dock")
         if var apps = dockSuite?.array(forKey: "persistent-apps") as? [[String: Any]] {
+            if let idx = apps.firstIndex(where: { entry in
+                guard let td = entry["tile-data"] as? [String: Any],
+                      let fd = td["file-data"] as? [String: Any],
+                      let urlStr = fd["_CFURLString"] as? String,
+                      let url = URL(string: urlStr) else { return false }
+                return url.standardizedFileURL == appURL.standardizedFileURL
+            }) {
+                originalIndex = idx
+                originalEntry = apps[idx]
+            }
             apps.removeAll { entry in
                 guard let td = entry["tile-data"] as? [String: Any],
                       let fd = td["file-data"] as? [String: Any],
@@ -197,18 +209,38 @@ final class DockManager: ObservableObject {
 
         try? await Task.sleep(nanoseconds: 200_000_000)
 
-        // 4. Re-add Dock entry
+        // 4. Re-add Dock entry at original position preserving all fields
         if var apps = UserDefaults(suiteName: "com.apple.dock")?.array(forKey: "persistent-apps") as? [[String: Any]] {
-            let newEntry: [String: Any] = [
-                "tile-data": [
-                    "file-data": [
-                        "_CFURLString": "file://\(appPath)",
-                        "_CFURLStringType": 15
-                    ]
-                ],
-                "tile-type": "file-tile"
-            ]
-            apps.append(newEntry)
+            let newEntry: [String: Any]
+            if var entry = originalEntry {
+                // Rebuild from original entry — only update the path in file-data
+                // to preserve GUID, arrangement, displayas, and other Dock metadata.
+                if var td = entry["tile-data"] as? [String: Any],
+                   var fd = td["file-data"] as? [String: Any] {
+                    fd["_CFURLString"] = "file://\(appPath)"
+                    fd["_CFURLStringType"] = 15
+                    td["file-data"] = fd
+                    entry["tile-data"] = td
+                }
+                newEntry = entry
+            } else {
+                // Fallback: original entry not found — build minimal entry
+                newEntry = [
+                    "tile-data": [
+                        "file-data": [
+                            "_CFURLString": "file://\(appPath)",
+                            "_CFURLStringType": 15
+                        ]
+                    ],
+                    "tile-type": "file-tile"
+                ]
+            }
+            // Insert at original position; fallback to append if index is out of bounds
+            if let idx = originalIndex, idx <= apps.count {
+                apps.insert(newEntry, at: idx)
+            } else {
+                apps.append(newEntry)
+            }
             UserDefaults(suiteName: "com.apple.dock")?.set(apps, forKey: "persistent-apps")
             UserDefaults(suiteName: "com.apple.dock")?.synchronize()
         }

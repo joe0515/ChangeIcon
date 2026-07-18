@@ -6,10 +6,13 @@ CONFIGURATION="${1:-debug}"
 BUILD_DIR="$ROOT_DIR/.build/$CONFIGURATION"
 APP_DIR="$ROOT_DIR/build/ChangeIcon.app"
 
+# Use Xcode toolchain (required for macOS 27 SDK builds)
+export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode-beta.app/Contents/Developer}"
+
 cd "$ROOT_DIR"
 
 echo "🔨 Building main app..."
-swift build -c "$CONFIGURATION"
+swift build -c "$CONFIGURATION" --disable-sandbox
 
 echo "🔧 Building helper..."
 swiftc "$ROOT_DIR/seticon_helper.swift" -o "$ROOT_DIR/build/seticon"
