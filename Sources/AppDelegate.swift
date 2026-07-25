@@ -318,26 +318,35 @@ final class SharedAppState {
     }
 
     @objc private func openMainWindow() {
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
-
-        // Prefer openWindowAction — it targets the WindowGroup(id: "main")
-        // specifically, avoiding false matches with Settings/other windows.
-        if let action = SharedAppState.shared.openWindowAction {
-            action("main")
-        } else if let w = NSApp.windows.first(where: { $0.title.contains("ChangeIcon") }) {
-            w.makeKeyAndOrderFront(nil)
-        }
+        restoreOrOpenMainWindow()
     }
 
     @objc private func handleOpenMainWindow(_ notification: Notification) {
         // Safety net: catches .openMainWindow when SwiftUI onReceive may be torn down
+        restoreOrOpenMainWindow()
+    }
+
+    /// Restore the existing main window if available (including from minimized state),
+    /// otherwise create a new one via `openWindowAction`.
+    ///
+    /// This prevents duplicate windows when clicking the Dock icon or menu bar item
+    /// while the main window is minimized or behind other apps.
+    private func restoreOrOpenMainWindow() {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+
+        // Check for existing window first — restore it instead of creating a duplicate
+        if let w = NSApp.windows.first(where: { $0.title.contains("ChangeIcon") }) {
+            if w.isMiniaturized {
+                w.deminiaturize(nil)
+            }
+            w.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        // No existing window — create one
         if let action = SharedAppState.shared.openWindowAction {
             action("main")
-        } else if let w = NSApp.windows.first(where: { $0.title.contains("ChangeIcon") }) {
-            w.makeKeyAndOrderFront(nil)
         }
     }
 
@@ -368,13 +377,7 @@ final class SharedAppState {
     @objc private func quitApp() { NSApp.terminate(nil) }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
-        if let action = SharedAppState.shared.openWindowAction {
-            action("main")
-        } else if let w = NSApp.windows.first(where: { $0.title.contains("ChangeIcon") }) {
-            w.makeKeyAndOrderFront(nil)
-        }
+        restoreOrOpenMainWindow()
         return true
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }

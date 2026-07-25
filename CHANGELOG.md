@@ -1,3 +1,22 @@
+# ChangeIcon v0.6.2
+
+> 发布日期：2026-07-25
+
+---
+
+## 🔧 Bug 修复
+
+### 最小化到 Dock 后点击图标重复打开窗口
+
+- **现象**：软件最小化到 Dock 栏后，点击 Dock 图标会重复创建新窗口，点击多少次就打开多少个界面
+- **根因**：`applicationShouldHandleReopen` 等三个窗口恢复方法优先调用 `openWindow(id:)` 创建新窗口，而非检查已有窗口并恢复
+- **修复**：统一为 `restoreOrOpenMainWindow()` 方法：先查找已有窗口（含取消最小化），仅在无窗口时才创建新窗口
+
+### 涉及文件
+- `Sources/AppDelegate.swift` — 新增 `restoreOrOpenMainWindow()`，统一 `openMainWindow`、`handleOpenMainWindow`、`applicationShouldHandleReopen` 三个入口
+
+---
+
 # ChangeIcon v0.6.1
 
 > 发布日期：2026-07-18
