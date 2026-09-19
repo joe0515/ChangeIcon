@@ -100,8 +100,7 @@ struct ContentView: View {
                 }
             }
             .padding(8)
-            .background(Color(nsColor: .controlBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .glassCard(cornerRadius: 8)
             .padding([.horizontal, .top], 12)
 
             List(filteredSchemes, selection: $selection) { scheme in
@@ -516,6 +515,8 @@ private struct SchemeDetailView: View {
                 }
             }
         }
+        .padding(16)
+        .glassCard()
     }
 
     private func iconLibraryGrid(mode: AppearanceMode) -> some View {
@@ -696,8 +697,7 @@ private struct SchemeDetailView: View {
             }
         }
         .padding(16)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .glassCard()
     }
 
     private func suggestionColumn(mode: AppearanceMode, icon: String, color: Color, suggestions: [IconSuggestion]) -> some View {
@@ -887,6 +887,8 @@ private struct SchemeDetailView: View {
                 }
             }
         }
+        .padding(16)
+        .glassCard()
     }
 
     private func shapeButton(_ shape: IconShape) -> some View {
@@ -949,8 +951,7 @@ private struct SchemeDetailView: View {
                 }
             }
             .padding(16)
-            .background(Color(nsColor: .controlBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .glassCard()
         } else if !libraryMatches.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
@@ -1009,8 +1010,7 @@ private struct SchemeDetailView: View {
                 }
             }
             .padding(16)
-            .background(Color(nsColor: .controlBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .glassCard()
         }
     }
 
@@ -1040,6 +1040,7 @@ private struct SchemeDetailView: View {
                 } label: {
                     Label("应用当前外观图标", systemImage: "paintbrush.pointed.fill")
                 }
+                .glassButtonStyle(primary: true)
                 .disabled(isApplying)
                 .keyboardShortcut("r", modifiers: .command)
 
@@ -1051,12 +1052,14 @@ private struct SchemeDetailView: View {
                 } label: {
                     Label("恢复原始图标", systemImage: "arrow.uturn.backward")
                 }
+                .glassButtonStyle()
 
                 Button {
                     exportIcon(for: scheme)
                 } label: {
                     Label("导出当前图标", systemImage: "square.and.arrow.up")
                 }
+                .glassButtonStyle()
                 .disabled(scheme.iconURL(for: appearance.current) == nil)
 
                 Spacer()
@@ -1067,6 +1070,8 @@ private struct SchemeDetailView: View {
                 }
             }
         }
+        .padding(16)
+        .glassCard()
     }
 
     private func exportIcon(for scheme: IconScheme) {
@@ -1114,6 +1119,8 @@ private struct SchemeDetailView: View {
                 }
             }
         }
+        .padding(16)
+        .glassCard()
     }
 
 }

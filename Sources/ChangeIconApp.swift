@@ -34,6 +34,7 @@ struct ChangeIconApp: App {
                 }
             }
             .animation(.easeInOut(duration: 0.3), value: shouldShowGuide)
+            .windowGlassBackground()
             .onReceive(NotificationCenter.default.publisher(for: .openMainWindow)) { _ in
                 NSApp.setActivationPolicy(.regular)
                 NSApp.activate(ignoringOtherApps: true)

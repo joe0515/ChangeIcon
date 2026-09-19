@@ -2,28 +2,29 @@ import SwiftUI
 
 // MARK: - macOS 26+ Liquid Glass 兼容封装
 //
-// 项目最低支持 macOS 14，而 Liquid Glass 设计 API（`glassEffect`、
-// `.buttonStyle(.glass)` 等）仅 macOS 26+ 可用。这里通过 `#available`
-// 条件编译统一封装：macOS 26+ 呈现液态玻璃效果，旧系统自动降级为
-// 毛玻璃材质（`.regularMaterial`）与 `.bordered` 按钮。
+// 依据 Apple Liquid Glass 设计规范：`glassEffect`（液态玻璃）应仅用于
+// **导航层**（侧边栏、工具栏、浮动控件），而**内容层的卡片**应使用
+// `.regularMaterial`（毛玻璃材质）。因此：
+//
+// - `materialCard`：内容卡片背景，统一用 `.regularMaterial`。
+// - `glassButtonStyle`：按钮使用液态玻璃按钮样式（macOS 26+）或降级为
+//   `.bordered`（旧系统）。
 
 extension View {
-    /// 玻璃卡片背景。
+    /// 内容卡片背景：毛玻璃材质。
     /// - Parameter cornerRadius: 卡片圆角半径
-    /// - Returns: macOS 26+ 用液态玻璃，否则用毛玻璃材质
+    @ViewBuilder
+    func materialCard(cornerRadius: CGFloat = 14) -> some View {
+        self.background(
+            .regularMaterial,
+            in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        )
+    }
+
+    /// 兼容别名：早期实现命名为 `glassCard`，现语义为内容卡片毛玻璃背景。
     @ViewBuilder
     func glassCard(cornerRadius: CGFloat = 14) -> some View {
-        if #available(macOS 26.0, *) {
-            self.glassEffect(
-                .regular,
-                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            )
-        } else {
-            self.background(
-                .regularMaterial,
-                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            )
-        }
+        materialCard(cornerRadius: cornerRadius)
     }
 
     /// 玻璃按钮样式。
@@ -45,3 +46,34 @@ extension View {
         }
     }
 }
+
+// MARK: - Window glass background
+
+/// 让窗口背景透明，以便侧边栏玻璃（NavigationSplitView 自动）与毛玻璃材质
+/// 能折射桌面与背后窗口，呈现 macOS 26/27 的液态玻璃观感。
+private struct WindowGlassBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            configure(view)
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private func configure(_ view: NSView) {
+        guard let window = view.window else { return }
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.hasShadow = true
+    }
+}
+
+extension View {
+    /// 将窗口背景设为透明，启用玻璃折射。
+    func windowGlassBackground() -> some View {
+        background(WindowGlassBackground())
+    }
+}
+
