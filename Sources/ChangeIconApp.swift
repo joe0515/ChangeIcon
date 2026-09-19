@@ -18,6 +18,7 @@ struct ChangeIconApp: App {
     @StateObject private var permissions = PermissionManager()
     @StateObject private var dock = DockManager()
     @StateObject private var sudoersManager = SudoersManager.shared
+    @StateObject private var backup = BackupManager()
 
     private var shouldShowGuide: Bool {
         !permissions.userDismissed && !permissions.allGranted
@@ -103,6 +104,7 @@ struct ChangeIconApp: App {
                 .environmentObject(store)
                 .environmentObject(permissions)
                 .environmentObject(sudoersManager)
+                .environmentObject(backup)
         }
 
 

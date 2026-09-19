@@ -179,7 +179,6 @@ final class DockManager: ObservableObject {
     /// shows a color-inverted / stale icon while Finder/LaunchPad show correctly.
     func forceDockIconRefresh(appPath: String, bundleID: String, restartDock: Bool = true) async {
         let appName = fm.displayName(atPath: appPath)
-        let appURL = URL(fileURLWithPath: appPath)
         logger.info("Force-refreshing Dock icon for \(appName)")
 
         // 1. Touch the app bundle so Dock's fsevents watcher notices

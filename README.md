@@ -8,6 +8,7 @@ ChangeIcon 是一个原生 macOS 小工具，用来快速替换应用图标，�
 - 拖拽图标文件到方案详情，或从剪贴板粘贴图片
 - 侧边栏按应用名称或路径搜索，右键可复制路径或在 Finder 中显示
 - 为浅色模式和深色模式分别指定 `.icns`、`.png`、`.jpg` 或 `.tiff`
+- 设置的图标自动固化到应用数据目录并统一命名，不依赖原始文件位置
 - 图标形状处理：支持原始、圆角、圆形、超椭圆四种遮罩
 - 从文件夹批量导入图标包，按应用名和 `light` / `dark` / `浅色` / `深色` 等关键词自动匹配
 - 批量应用全部方案，带进度指示
@@ -16,6 +17,7 @@ ChangeIcon 是一个原生 macOS 小工具，用来快速替换应用图标，�
 - 图标预览缓存，减少应用列表和图标包预览反复解码
 - 首次替换前备份原始图标，可一键恢复
 - 导出/导入图标方案 (JSON)，方便分享和迁移
+- 用户数据备份：一键导出/导入全部软件信息与深浅色图标文件（`.changeiconbackup` 归档）
 - 导出当前图标为 PNG 文件
 - 撤销上一步操作 (⌘Z)
 - 拖拽图标到 Dock 图标即可快速应用到已启用方案
@@ -54,21 +56,43 @@ build/ChangeIcon.app
 
 ```
 ChangeIcon/
-├── Package.swift              # Swift Package Manager 配置
+├── Package.swift                  # Swift Package Manager 配置
 ├── README.md
+├── seticon_helper.swift           # 特权辅助工具（sudo 执行图标替换）
 ├── Resources/
-│   └── Info.plist             # App Bundle 配置
+│   ├── Info.plist                 # App Bundle 配置
+│   └── ChangeIcon.entitlements    # 非沙箱签名声明
 ├── Sources/
-│   ├── ChangeIconApp.swift    # @main 入口 + 菜单栏命令
-│   ├── AppDelegate.swift      # Dock 拖拽处理
-│   ├── Models.swift           # 数据模型
-│   ├── ContentView.swift      # 主界面
-│   ├── IconSchemeStore.swift  # 数据持久化 + 撤销 + 导入导出
-│   ├── IconApplier.swift      # 图标替换引擎
-│   ├── AppearanceMonitor.swift # 外观监听
-│   ├── IconPreviewCache.swift # 图标缓存
-│   ├── SettingsView.swift     # 设置
-│   └── MenuBarView.swift      # 菜单栏
+│   ├── ChangeIconApp.swift        # @main 入口 + 菜单栏命令
+│   ├── AppDelegate.swift          # 状态项 + 外观切换 + Dock 拖拽
+│   ├── Models.swift               # 数据模型
+│   ├── ContentView.swift          # 主界面
+│   ├── IconSchemeStore.swift      # 数据持久化 + 撤销 + 导入导出
+│   ├── BackupManager.swift        # 用户数据备份（导出/导入）
+│   ├── IconStorage.swift          # 图标固化存储（统一命名）
+│   ├── IconApplier.swift          # 图标替换引擎（三层降级）
+│   ├── AppearanceMonitor.swift    # 外观监听
+│   ├── IconPreviewCache.swift     # 图标预览缓存
+│   ├── IconLibrary.swift          # 内置图标库
+│   ├── IconSuggestionEngine.swift # 图标推荐引擎
+│   ├── UserIconLibrary.swift      # 用户图标库
+│   ├── ChatBotMenuBarIcon.swift   # 菜单栏图标绘制
+│   ├── SudoersManager.swift       # sudoers 免密码授权
+│   ├── DockManager.swift          # Dock 图标缓存管理
+│   ├── PermissionManager.swift    # 权限检测
+│   ├── PermissionGuideView.swift  # 权限引导页
+│   ├── SettingsView.swift         # 设置
+│   ├── LiquidGlass.swift          # macOS 26+ 玻璃效果封装
+│   ├── OverlayScrollers.swift     # 滚动条 overlay 样式
+│   ├── MenuBarView.swift          # 菜单栏
+│   └── Resources/                 # SPM 运行时资源
+│       ├── menubar-icon.png
+│       └── menubar-icon.icns
+├── icons/                         # 内置图标包
+├── Tests/
+│   └── MenuBarIconTests.swift     # 菜单栏图标测试
+├── docs/                          # 设计文档与图
 └── scripts/
-    └── build_app.sh           # 构建脚本
+    ├── build_app.sh               # 构建 .app
+    └── build_dmg.sh               # 构建 DMG 安装包
 ```

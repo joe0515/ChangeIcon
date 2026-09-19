@@ -144,6 +144,7 @@ struct ContentView: View {
             .onDrop(of: [.fileURL], isTargeted: $isSidebarTargeted) { providers in
                 handleSidebarDrop(providers: providers)
             }
+            .overlayScrollers()
 
             Divider()
 
@@ -411,6 +412,7 @@ private struct SchemeDetailView: View {
                 .padding(24)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .overlayScrollers()
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .task(id: scheme.id) {

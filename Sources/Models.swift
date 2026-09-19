@@ -137,3 +137,28 @@ struct OperationLog: Identifiable, Equatable {
     let message: String
     let isError: Bool
 }
+
+// MARK: - Backup Models
+
+/// 备份清单中单个软件的条目。
+///
+/// 与 `IconScheme` 不同，这里图标字段存的是**归档内相对路径**（如
+/// `icons/WeChat-light.png`），而非绝对路径，从而保证备份可跨机器迁移。
+struct BackupSchemeEntry: Codable, Equatable {
+    var appName: String
+    var bundleID: String?
+    var appPath: String
+    var iconShape: IconShape
+    var enabled: Bool
+    var lightIcon: String?
+    var darkIcon: String?
+}
+
+/// 备份文件顶层清单（`manifest.json`）。
+struct BackupManifest: Codable {
+    var version: Int
+    var exportedAt: Date
+    var schemes: [BackupSchemeEntry]
+
+    static let currentVersion = 1
+}

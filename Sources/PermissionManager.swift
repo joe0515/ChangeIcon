@@ -157,11 +157,12 @@ final class PermissionManager: ObservableObject {
         NSWorkspace.shared.open(url)
     }
 
-    func openAllMissingSettings() {
+    func openAllMissingSettings() async {
         let missing = missingPermissions
         permLog.info("Opening all missing permission settings (\(missing.count))")
         for (i, p) in missing.enumerated() {
-            if i > 0 { Thread.sleep(forTimeInterval: 0.3) }
+            // Throttle between opens without blocking the main thread
+            if i > 0 { try? await Task.sleep(nanoseconds: 300_000_000) }
             openSettings(for: p)
         }
     }

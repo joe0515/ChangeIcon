@@ -88,11 +88,13 @@ final class IconSchemeStore: ObservableObject {
     func setIcon(_ iconURL: URL, for scheme: IconScheme, mode: AppearanceMode) {
         guard let index = schemes.firstIndex(where: { $0.id == scheme.id }) else { return }
         pushUndo()
+        // 固化图标到固定目录并统一命名（与备份命名一致）；失败则回退到原始 URL
+        let persisted = IconStorage.persist(iconURL, appName: scheme.appName, mode: mode) ?? iconURL
         switch mode {
         case .light:
-            schemes[index].lightIconURL = iconURL
+            schemes[index].lightIconURL = persisted
         case .dark:
-            schemes[index].darkIconURL = iconURL
+            schemes[index].darkIconURL = persisted
         }
     }
 
@@ -173,6 +175,31 @@ final class IconSchemeStore: ObservableObject {
             : "所有方案已存在，没有新增。"
     }
 
+    /// 应用备份导入：按 bundleID / 路径匹配已有方案并更新图标，未命中则新增。
+    func applyBackup(_ imported: [IconScheme]) {
+        pushUndo()
+        var added = 0
+        var updated = 0
+        for scheme in imported {
+            if let idx = schemes.firstIndex(where: { existing in
+                if let bid = scheme.cachedBundleID, let ebid = existing.cachedBundleID, bid == ebid {
+                    return true
+                }
+                return existing.appURL.standardizedFileURL == scheme.appURL.standardizedFileURL
+            }) {
+                schemes[idx].lightIconURL = scheme.lightIconURL
+                schemes[idx].darkIconURL = scheme.darkIconURL
+                schemes[idx].iconShape = scheme.iconShape
+                if schemes[idx].cachedBundleID == nil { schemes[idx].cachedBundleID = scheme.cachedBundleID }
+                updated += 1
+            } else {
+                schemes.append(scheme)
+                added += 1
+            }
+        }
+        importSummary = "已导入 \(imported.count) 个方案（新增 \(added)、更新 \(updated)）。"
+    }
+
     // MARK: - Icon Pack Import
 
     func importIconPack(from folderURL: URL) {
@@ -196,14 +223,14 @@ final class IconSchemeStore: ObservableObject {
 
             guard !matches.isEmpty else { continue }
 
-            if let light = Self.bestIcon(in: matches, for: .light) {
-                updated[index].lightIconURL = light
-                matchedCount += 1
-            }
-            if let dark = Self.bestIcon(in: matches, for: .dark) {
-                updated[index].darkIconURL = dark
-                matchedCount += 1
-            }
+        if let light = Self.bestIcon(in: matches, for: .light) {
+            updated[index].lightIconURL = IconStorage.persist(light, appName: updated[index].appName, mode: .light) ?? light
+            matchedCount += 1
+        }
+        if let dark = Self.bestIcon(in: matches, for: .dark) {
+            updated[index].darkIconURL = IconStorage.persist(dark, appName: updated[index].appName, mode: .dark) ?? dark
+            matchedCount += 1
+        }
         }
 
         schemes = updated

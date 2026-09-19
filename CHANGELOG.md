@@ -1,3 +1,28 @@
+# ChangeIcon v0.7.0
+
+> 发布日期：2026-09-19
+
+---
+
+## 🚀 新增
+
+### 用户数据备份
+- 一键导出/导入全部软件信息与深浅色图标文件，打包为 `.changeiconbackup` 归档
+- 图标统一命名 `<应用名>-light/dark.<扩展名>`，与所属软件、外观模式一一对应
+
+### 图标固化
+- 设置图标时自动复制到应用数据目录并统一命名，移动/删除原始文件不影响已设置的图标
+
+### 设置界面重构
+- 采用 macOS 26+ Liquid Glass 液态玻璃设计，卡片化布局（备份与恢复 / 启动 / 权限 / 管理员授权）
+- macOS 14–25 自动降级为毛玻璃材质
+
+## 🔧 改进
+- 主界面滚动条改为 overlay 样式：不滚动时隐藏，滚动时显示
+- 构建脚本统一菜单栏图标来源、从 Info.plist 读取版本号、接入 entitlements 签名
+
+---
+
 # ChangeIcon v0.6.2
 
 > 发布日期：2026-07-25
@@ -104,6 +129,10 @@
 
 # ChangeIcon v0.5.5
 
+> 发布日期：2026-06-10
+
+---
+
 ## 🔧 macOS 27 Beta 兼容性
 
 ### 系统行为变化
@@ -118,12 +147,6 @@ macOS 27 beta 进一步加强了 `/Applications/` 目录的写入保护。`NSWor
 - 尝试使用 `Security.framework` 的 `AuthorizationExecuteWithPrivileges` 实现会话级授权缓存，但该 API 在 macOS 27 SDK 中已被标记为不可用
 - 替代方案 `SMJobBless`（安装持久化特权 Helper）需要 Developer ID 签名，当前 ad-hoc 签名项目无法使用
 - 将持续关注 macOS 27 后续 beta 版本的行为变化，评估是否需要引入签名流程
-
----
-
-# ChangeIcon v0.5.5
-
-> 发布日期：2026-06-10
 
 ---
 

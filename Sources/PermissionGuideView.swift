@@ -107,8 +107,10 @@ struct PermissionGuideView: View {
                     .padding(.vertical, 4)
                 } else {
                     Button {
-                        permissions.openAllMissingSettings()
-                        permissions.startPolling()
+                        Task {
+                            await permissions.openAllMissingSettings()
+                            permissions.startPolling()
+                        }
                     } label: {
                         Label("全部开启", systemImage: "checkmark.circle.fill")
                             .frame(maxWidth: .infinity)
