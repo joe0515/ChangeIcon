@@ -67,7 +67,7 @@ struct ChangeIconApp: App {
                 if granted { logger.info("All permissions granted — loading main UI") }
             }
         }
-        .windowStyle(.titleBar)
+        .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(after: .newItem) {
                 Button("应用当前外观图标") {
