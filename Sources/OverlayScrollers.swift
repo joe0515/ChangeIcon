@@ -4,58 +4,49 @@ import SwiftUI
 /// 强制滚动视图使用 overlay 滚动条：不滚动时自动隐藏，滚动时才显示。
 ///
 /// SwiftUI 的 `.scrollIndicators()` 无法强制该行为（`.visible` 在 macOS 上
-/// 仍尊重系统偏好，`.automatic` 跟随系统设置）。这里通过向滚动内容注入一个
-/// 配置探针，在其挂载到窗口后找到所在的 `NSScrollView`，把 `scrollerStyle`
-/// 设为 `.overlay`。
-struct OverlayScrollersModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content.background(OverlayScrollerConfigurator())
+/// 仍尊重系统偏好），且 SwiftUI 的 List/ScrollView 底层 NSScrollView 埋在
+/// 很深的私有视图层级中，局部探针难以定位。因此这里**遍历整个窗口视图树**，
+/// 找到全部 `NSScrollView` 并把 `scrollerStyle` 设为 `.overlay`。
+@MainActor
+enum OverlayScrollerStyle {
+    /// 应用到当前应用的所有窗口。
+    static func applyToAllWindows() {
+        for window in NSApp.windows {
+            apply(window.contentView)
+        }
+    }
+
+    /// 深度优先遍历视图树。
+    static func apply(_ root: NSView?) {
+        guard let root else { return }
+        if let scrollView = root as? NSScrollView {
+            scrollView.scrollerStyle = .overlay
+        }
+        for subview in root.subviews {
+            apply(subview)
+        }
     }
 }
 
-private struct OverlayScrollerConfigurator: NSViewRepresentable {
+private struct OverlayScrollerProbe: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
-        ScrollerStyleProbeView()
+        let view = NSView()
+        // 挂载时立即应用，并延迟兜底（覆盖 SwiftUI 延迟创建的滚动视图）
+        DispatchQueue.main.async {
+            OverlayScrollerStyle.applyToAllWindows()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            OverlayScrollerStyle.applyToAllWindows()
+        }
+        return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
-/// 透明探针视图：加入窗口后找到所在滚动视图并应用 overlay 样式。
-private final class ScrollerStyleProbeView: NSView {
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        guard window != nil else { return }
-        applyOverlayStyle()
-
-        // 兜底：SwiftUI 可能在稍后重建滚动视图，延迟再确认一次
-        DispatchQueue.main.async { [weak self] in
-            self?.applyOverlayStyle()
-        }
-    }
-
-    private func applyOverlayStyle() {
-        if let scroll = enclosingScrollView {
-            scroll.scrollerStyle = .overlay
-        } else if let scroll = findScrollViewUpwards() {
-            scroll.scrollerStyle = .overlay
-        }
-    }
-
-    /// 向上遍历 superview 链查找 `NSScrollView`（`enclosingScrollView` 失效时兜底）。
-    private func findScrollViewUpwards() -> NSScrollView? {
-        var current: NSView? = self
-        while let view = current {
-            if let scroll = view as? NSScrollView { return scroll }
-            current = view.superview
-        }
-        return nil
-    }
-}
-
 extension View {
     /// 让滚动条在不滚动时隐藏、滚动时显示（overlay 样式）。
     func overlayScrollers() -> some View {
-        modifier(OverlayScrollersModifier())
+        background(OverlayScrollerProbe())
     }
 }

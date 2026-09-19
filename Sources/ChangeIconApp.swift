@@ -38,7 +38,8 @@ struct ChangeIconApp: App {
             .onReceive(NotificationCenter.default.publisher(for: .openMainWindow)) { _ in
                 NSApp.setActivationPolicy(.regular)
                 NSApp.activate(ignoringOtherApps: true)
-                if let w = NSApp.windows.first(where: { $0.title.contains("ChangeIcon") }) {
+                // 精确匹配主窗口（identifier == "main"），避免误匹配设置窗口
+                if let w = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" }) {
                     w.makeKeyAndOrderFront(nil)
                 }
             }

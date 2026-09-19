@@ -335,8 +335,10 @@ final class SharedAppState {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
 
-        // Check for existing window first — restore it instead of creating a duplicate
-        if let w = NSApp.windows.first(where: { $0.title.contains("ChangeIcon") }) {
+        // 精确匹配主窗口（identifier == "main"，对应 WindowGroup(id: "main")）。
+        // 不能用 title 匹配——设置窗口标题同为 "ChangeIcon"，会误匹配导致
+        // 只把设置窗口置前、主窗口无法打开。
+        if let w = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" }) {
             if w.isMiniaturized {
                 w.deminiaturize(nil)
             }

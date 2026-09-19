@@ -33,6 +33,8 @@ struct ContentView: View {
         } detail: {
             detail
                 .frame(minWidth: 400)
+                .navigationTitle("")
+                .toolbar(.hidden, for: .windowToolbar)
         }
         .navigationSplitViewStyle(.balanced)
         .frame(minWidth: 960)
